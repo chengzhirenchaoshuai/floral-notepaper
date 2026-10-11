@@ -1,5 +1,3 @@
-**简体中文** | [繁體中文](Docs/CONTRIBUTING_zh-HK.md) | [English](Docs/CONTRIBUTING_en-US.md)
-
 # 贡献指南
 
 感谢你对花笺（Floral Notepaper）的关注！这份指南会帮助你了解如何参与项目开发。
@@ -14,22 +12,20 @@
 
   | 平台        | 所需依赖                                                                                                                                                                                                             |
   | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | **macOS**   | Xcode Command Line Tools                                                                                                                                                                                             |
-  | **Linux**   | `libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`libayatana-appindicator3-dev`、`librsvg2-dev`、`libsoup-3.0-dev`                                                                                                           |
   | **Windows** | [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)、[Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 11 或高版本 Windows 10 已内置） |
 
 ### 克隆与启动
 
 ```bash
-git clone git@github.com:Achilng/floral-notepaper.git
+git clone git@github.com:chengzhirenchaoshuai/floral-notepaper.git
 cd floral-notepaper
 npm install
 
 # 启动开发版
 npm run tauri dev
 
-# 构建正式版
-npm run tauri build
+# 构建正式版（产物输出到 release/）
+pwsh -File scripts/build-windows-local.ps1
 ```
 
 ## 分支与提交规范
