@@ -18,10 +18,6 @@ pub struct StoredUpdateSettings {
     #[serde(default = "default_check_interval_hours")]
     pub check_interval_hours: u32,
     #[serde(default)]
-    pub check_source_preference: CheckSourcePreference,
-    #[serde(default)]
-    pub download_source_preference: DownloadSourcePreference,
-    #[serde(default)]
     pub channel: UpdateChannel,
     #[serde(default)]
     pub allow_prerelease: bool,
@@ -35,8 +31,6 @@ impl StoredUpdateSettings {
             auto_check: settings.auto_check,
             auto_download: settings.auto_download,
             check_interval_hours: normalize_check_interval(settings.check_interval_hours),
-            check_source_preference: settings.check_source_preference,
-            download_source_preference: settings.download_source_preference,
             channel: settings.channel,
             allow_prerelease: settings.allow_prerelease,
             last_auto_check_at: settings.last_auto_check_at,
@@ -52,22 +46,14 @@ impl StoredUpdateSettings {
         next
     }
 
-    pub fn into_dto(
-        self,
-        has_mirror_chyan_cdk: bool,
-        mirror_chyan_cdk_length: Option<u32>,
-    ) -> UpdateSettingsDto {
+    pub fn into_dto(self) -> UpdateSettingsDto {
         UpdateSettingsDto {
             auto_check: self.auto_check,
             auto_download: self.auto_download,
             check_interval_hours: self.check_interval_hours,
-            check_source_preference: self.check_source_preference,
-            download_source_preference: self.download_source_preference,
             channel: self.channel,
             allow_prerelease: self.allow_prerelease,
             last_auto_check_at: self.last_auto_check_at,
-            has_mirror_chyan_cdk,
-            mirror_chyan_cdk_length,
         }
     }
 }
@@ -78,8 +64,6 @@ impl Default for StoredUpdateSettings {
             auto_check: true,
             auto_download: false,
             check_interval_hours: 24,
-            check_source_preference: CheckSourcePreference::MirrorChyanFirst,
-            download_source_preference: DownloadSourcePreference::MirrorChyanFirst,
             channel: UpdateChannel::Stable,
             allow_prerelease: false,
             last_auto_check_at: None,
@@ -163,38 +147,24 @@ mod tests {
         assert!(settings.auto_check);
         assert!(!settings.auto_download);
         assert_eq!(settings.check_interval_hours, 24);
-        assert_eq!(
-            settings.check_source_preference,
-            CheckSourcePreference::MirrorChyanFirst
-        );
-        assert_eq!(
-            settings.download_source_preference,
-            DownloadSourcePreference::MirrorChyanFirst
-        );
         assert!(paths.settings_path().exists());
     }
 
     #[test]
-    fn saves_settings_without_has_cdk_field() {
+    fn saves_and_loads_settings() {
         let paths = test_paths("settings-save");
         let settings = StoredUpdateSettings::from_dto(UpdateSettingsDto {
             auto_check: false,
             auto_download: true,
             check_interval_hours: 168,
-            check_source_preference: CheckSourcePreference::MirrorChyanFirst,
-            download_source_preference: DownloadSourcePreference::GithubFirst,
             channel: UpdateChannel::Beta,
             allow_prerelease: true,
             last_auto_check_at: None,
-            has_mirror_chyan_cdk: true,
-            mirror_chyan_cdk_length: None,
         });
 
         save(&paths, &settings).expect("save settings");
-        let raw = fs::read_to_string(paths.settings_path()).expect("read settings file");
         let loaded = load(&paths).expect("load saved settings");
 
-        assert!(!raw.contains("hasMirrorChyanCdk"));
         assert_eq!(loaded, settings);
     }
 
@@ -210,13 +180,9 @@ mod tests {
                 auto_check: false,
                 auto_download: true,
                 check_interval_hours: 168,
-                check_source_preference: CheckSourcePreference::MirrorChyanFirst,
-                download_source_preference: DownloadSourcePreference::GithubFirst,
                 channel: UpdateChannel::Beta,
                 allow_prerelease: true,
                 last_auto_check_at: None,
-                has_mirror_chyan_cdk: false,
-                mirror_chyan_cdk_length: None,
             },
         );
 

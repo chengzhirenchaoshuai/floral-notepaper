@@ -724,7 +724,6 @@ fn scheduled_state(
         asset_sha256: current_state.asset_sha256.clone(),
         asset_size: current_state.asset_size,
         asset_url: current_state.asset_url.clone(),
-        source: current_state.source.clone(),
         checked_at: current_state.checked_at,
         downloaded_at: current_state.downloaded_at,
         install_log_path: Some(request.command.log_path.to_string_lossy().to_string()),
@@ -752,7 +751,6 @@ fn validated_test_state(
         asset_sha256: current_state.asset_sha256.clone(),
         asset_size: current_state.asset_size,
         asset_url: current_state.asset_url.clone(),
-        source: current_state.source.clone(),
         checked_at: current_state.checked_at,
         downloaded_at: current_state.downloaded_at,
         install_log_path: Some(request.command.log_path.to_string_lossy().to_string()),
@@ -781,7 +779,6 @@ fn failed_state(
         asset_sha256: current_state.asset_sha256.clone(),
         asset_size: current_state.asset_size,
         asset_url: current_state.asset_url.clone(),
-        source: current_state.source.clone(),
         checked_at: current_state.checked_at,
         downloaded_at: current_state.downloaded_at,
         install_log_path: Some(request.command.log_path.to_string_lossy().to_string()),
@@ -811,7 +808,6 @@ fn failed_state_without_request(
         asset_sha256: current_state.asset_sha256.clone(),
         asset_size: current_state.asset_size,
         asset_url: current_state.asset_url.clone(),
-        source: current_state.source.clone(),
         checked_at: current_state.checked_at,
         downloaded_at: current_state.downloaded_at,
         install_log_path: None,
@@ -861,7 +857,7 @@ fn load_current_install_failure(
 mod tests {
     use super::*;
     use crate::updater::settings::write_json_atomic;
-    use crate::updater::types::{DownloadSourceUsed, UpdateChannel};
+    use crate::updater::types::UpdateChannel;
     use std::{fs, sync::Arc};
 
     #[derive(Debug, Clone)]
@@ -945,7 +941,6 @@ mod tests {
             asset_sha256: Some("abc".repeat(21) + "a"),
             asset_size: Some(16),
             asset_url: None,
-            source: Some(DownloadSourceUsed::Github),
             checked_at: Some(Utc::now()),
             downloaded_at: Some(Utc::now()),
             install_log_path: None,

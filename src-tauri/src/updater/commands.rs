@@ -4,8 +4,8 @@ use super::{
     errors,
     install::UpdateInstallService,
     types::{
-        DownloadSourceUsed, UpdateCheckResult, UpdateDownloadResult, UpdateErrorDto,
-        UpdateInstallMode, UpdateInstallResult, UpdateStateDto, UpdateStatus,
+        UpdateCheckResult, UpdateDownloadResult, UpdateErrorDto, UpdateInstallMode,
+        UpdateInstallResult, UpdateStateDto, UpdateStatus,
     },
     ActiveTaskGuard, InstallPrepareState, InstallPrepareWindowStatus, UpdatePaths, UpdateTaskKind,
     UpdaterState,
@@ -67,24 +67,6 @@ pub fn update_settings_save(
 }
 
 #[tauri::command]
-pub fn update_mirror_chyan_cdk_set(
-    state: State<'_, UpdaterState>,
-    cdk: String,
-) -> Result<(), AppError> {
-    state.set_mirror_chyan_cdk(&cdk)
-}
-
-#[tauri::command]
-pub fn update_mirror_chyan_cdk_clear(state: State<'_, UpdaterState>) -> Result<(), AppError> {
-    state.clear_mirror_chyan_cdk()
-}
-
-#[tauri::command]
-pub fn update_mirror_chyan_cdk_get(state: State<'_, UpdaterState>) -> Option<String> {
-    state.get_mirror_chyan_cdk()
-}
-
-#[tauri::command]
 pub async fn update_check(
     app: tauri::AppHandle,
     state: State<'_, UpdaterState>,
@@ -96,8 +78,6 @@ pub async fn update_check(
     let result_paths = paths.clone();
     let current_version = state.current_version().to_string();
     let emit_version = current_version.clone();
-    let cdk = state.get_mirror_chyan_cdk();
-    debug_log!("check", "CDK 已加载 has_cdk={}", cdk.is_some());
 
     let prepare_paths = paths.clone();
     let prepare_version = current_version.clone();
@@ -116,7 +96,7 @@ pub async fn update_check(
 
     let result = async_runtime::spawn_blocking(move || {
         let _task = task;
-        run_update_check_blocking(&paths, manual, &current_version, cdk)
+        run_update_check_blocking(&paths, manual, &current_version)
     })
     .await
     .map_err(|error| {
@@ -133,9 +113,7 @@ pub async fn update_check(
 pub async fn update_download(
     app: tauri::AppHandle,
     state: State<'_, UpdaterState>,
-    source: Option<String>,
 ) -> Result<UpdateDownloadResult, AppError> {
-    let source = source.as_deref().map(parse_download_source).transpose()?;
     let task = state.begin_task(UpdateTaskKind::Download)?;
     let cancel_flag = task
         .cancel_flag()
@@ -144,13 +122,12 @@ pub async fn update_download(
     let result_paths = paths.clone();
     let current_version = state.current_version().to_string();
     let app_handle = app.clone();
-    let cdk = state.get_mirror_chyan_cdk();
 
     let result = async_runtime::spawn_blocking(move || {
         let _task = task;
         let current_state = super::state::load_with_current_version(&paths, &current_version)?;
-        let service = UpdateDownloadService::from_env().with_cdk(cdk);
-        service.run(&paths, current_state, source, cancel_flag, |progress| {
+        let service = UpdateDownloadService::from_env();
+        service.run(&paths, current_state, cancel_flag, |progress| {
             if let Err(error) = app_handle.emit("update://download-progress", &progress) {
                 eprintln!("failed to emit update://download-progress: {error}");
             }
@@ -296,21 +273,8 @@ pub(crate) fn run_automatic_update_check(
 ) -> Result<UpdateCheckResult, AppError> {
     let (task, paths) = prepare_update_check(&app, state)?;
     let _task = task;
-    let cdk = state.get_mirror_chyan_cdk();
-    let result = run_update_check_blocking(&paths, false, state.current_version(), cdk);
+    let result = run_update_check_blocking(&paths, false, state.current_version());
     finalize_update_check(&app, &paths, false, state.current_version(), result)
-}
-
-fn parse_download_source(source: &str) -> Result<DownloadSourceUsed, AppError> {
-    match source.trim() {
-        "mirrorChyan" => Ok(DownloadSourceUsed::MirrorChyan),
-        "github" => Ok(DownloadSourceUsed::Github),
-        _ => Err(errors::with_detail(
-            errors::app_error("updateDownloadSourceInvalid", "无效的下载源参数"),
-            "source",
-            source,
-        )),
-    }
 }
 
 fn load_saved_error_payload(
@@ -542,9 +506,8 @@ fn run_update_check_blocking(
     paths: &UpdatePaths,
     manual: bool,
     current_version: &str,
-    cdk: Option<String>,
 ) -> Result<UpdateCheckResult, AppError> {
-    let service = UpdateCheckService::from_env().with_cdk(cdk);
+    let service = UpdateCheckService::from_env();
     service.run(paths, manual, current_version)
 }
 

@@ -21,7 +21,6 @@ const availableStatus: UpdateState = {
   assetSha256: "abc",
   assetSize: 12345678,
   assetUrl: "https://example.com/download.zip",
-  source: "github",
   checkedAt: "2026-05-27T08:00:00Z",
   downloadedAt: null,
   installLogPath: null,

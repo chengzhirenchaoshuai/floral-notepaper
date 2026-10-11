@@ -74,11 +74,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::updater::{
-        errors,
-        settings::StoredUpdateSettings,
-        types::{CheckSourcePreference, DownloadSourcePreference, UpdateChannel},
-    };
+    use crate::updater::{errors, settings::StoredUpdateSettings, types::UpdateChannel};
     use std::{
         fs,
         sync::atomic::{AtomicUsize, Ordering},
@@ -106,8 +102,6 @@ mod tests {
                 auto_check,
                 auto_download: false,
                 check_interval_hours,
-                check_source_preference: CheckSourcePreference::GithubFirst,
-                download_source_preference: DownloadSourcePreference::MirrorChyanFirst,
                 channel: UpdateChannel::Stable,
                 allow_prerelease: false,
                 last_auto_check_at,

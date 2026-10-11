@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  DownloadSourceUsed,
   UpdateCheckResult,
   UpdateDownloadResult,
   UpdateInstallPrepareReportStatus,
@@ -13,8 +12,8 @@ export function checkForUpdates(manual: boolean): Promise<UpdateCheckResult> {
   return invoke("update_check", { manual });
 }
 
-export function downloadUpdate(source?: DownloadSourceUsed): Promise<UpdateDownloadResult> {
-  return invoke("update_download", { source });
+export function downloadUpdate(): Promise<UpdateDownloadResult> {
+  return invoke("update_download");
 }
 
 export function installUpdate(): Promise<UpdateInstallResult> {
@@ -49,16 +48,4 @@ export function getUpdateSettings(): Promise<UpdateSettings> {
 
 export function saveUpdateSettings(settings: UpdateSettings): Promise<UpdateSettings> {
   return invoke("update_settings_save", { settings });
-}
-
-export function setMirrorChyanCdk(cdk: string): Promise<void> {
-  return invoke("update_mirror_chyan_cdk_set", { cdk });
-}
-
-export function getMirrorChyanCdk(): Promise<string | null> {
-  return invoke("update_mirror_chyan_cdk_get");
-}
-
-export function clearMirrorChyanCdk(): Promise<void> {
-  return invoke("update_mirror_chyan_cdk_clear");
 }

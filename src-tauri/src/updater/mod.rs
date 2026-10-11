@@ -1,4 +1,3 @@
-pub mod cdk_store;
 pub mod check;
 pub mod commands;
 pub mod download;
@@ -186,7 +185,6 @@ impl UpdatePaths {
 pub struct UpdaterState {
     paths: UpdatePaths,
     current_version: String,
-    cdk_store: cdk_store::CdkStore,
     active_task: Arc<Mutex<Option<ActiveUpdateTask>>>,
     install_prepare: Arc<Mutex<Option<InstallPrepareSession>>>,
     next_task_id: AtomicU64,
@@ -197,7 +195,6 @@ impl UpdaterState {
         Self {
             paths: UpdatePaths::new(default_updates_dir()),
             current_version: current_version.into(),
-            cdk_store: cdk_store::CdkStore::default(),
             active_task: Arc::new(Mutex::new(None)),
             install_prepare: Arc::new(Mutex::new(None)),
             next_task_id: AtomicU64::new(1),
@@ -224,9 +221,7 @@ impl UpdaterState {
     }
 
     pub fn settings(&self) -> Result<types::UpdateSettingsDto, AppError> {
-        let settings = settings::load(&self.paths)?;
-        let (has_mirror_chyan_cdk, mirror_chyan_cdk_length) = self.cdk_settings_info();
-        Ok(settings.into_dto(has_mirror_chyan_cdk, mirror_chyan_cdk_length))
+        Ok(settings::load(&self.paths)?.into_dto())
     }
 
     pub fn save_settings(
@@ -236,42 +231,7 @@ impl UpdaterState {
         let existing = settings::load(&self.paths)?;
         let stored = settings::StoredUpdateSettings::from_user_settings(&existing, settings);
         settings::save(&self.paths, &stored)?;
-        let (has_mirror_chyan_cdk, mirror_chyan_cdk_length) = self.cdk_settings_info();
-        Ok(stored.into_dto(has_mirror_chyan_cdk, mirror_chyan_cdk_length))
-    }
-
-    pub fn set_mirror_chyan_cdk(&self, cdk: &str) -> Result<(), AppError> {
-        self.cdk_store.set_cdk(cdk)
-    }
-
-    pub fn clear_mirror_chyan_cdk(&self) -> Result<(), AppError> {
-        self.cdk_store.clear_cdk()
-    }
-
-    pub fn has_mirror_chyan_cdk(&self) -> Result<bool, AppError> {
-        self.cdk_store.has_cdk()
-    }
-
-    pub fn get_mirror_chyan_cdk(&self) -> Option<String> {
-        self.cdk_store.get_cdk()
-    }
-
-    fn cdk_settings_info(&self) -> (bool, Option<u32>) {
-        match self.cdk_store.has_cdk() {
-            Ok(true) => {
-                let len = self
-                    .cdk_store
-                    .get_cdk()
-                    .map(|cdk| cdk.len() as u32)
-                    .filter(|n| *n > 0);
-                (true, len)
-            }
-            Ok(false) => (false, None),
-            Err(error) => {
-                eprintln!("failed to read MirrorChyan CDK from secure storage: {error}");
-                (false, None)
-            }
-        }
+        Ok(stored.into_dto())
     }
 
     pub fn load_state(&self) -> Result<types::UpdateStateDto, AppError> {
@@ -443,22 +403,9 @@ impl UpdaterState {
         paths: UpdatePaths,
         current_version: impl Into<String>,
     ) -> Self {
-        Self::with_paths_version_and_cdk_store(
-            paths,
-            current_version,
-            cdk_store::CdkStore::default(),
-        )
-    }
-
-    pub(crate) fn with_paths_version_and_cdk_store(
-        paths: UpdatePaths,
-        current_version: impl Into<String>,
-        cdk_store: cdk_store::CdkStore,
-    ) -> Self {
         Self {
             paths,
             current_version: current_version.into(),
-            cdk_store,
             active_task: Arc::new(Mutex::new(None)),
             install_prepare: Arc::new(Mutex::new(None)),
             next_task_id: AtomicU64::new(1),
@@ -580,10 +527,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::updater::types::{
-        CheckSourcePreference, DownloadSourcePreference, UpdateChannel, UpdateSettingsDto,
-        UpdateStateDto, UpdateStatus,
-    };
+    use crate::updater::types::{UpdateChannel, UpdateSettingsDto, UpdateStateDto, UpdateStatus};
     use chrono::Utc;
     use std::fs;
 
@@ -617,13 +561,9 @@ mod tests {
                 auto_check: false,
                 auto_download: true,
                 check_interval_hours: 168,
-                check_source_preference: CheckSourcePreference::MirrorChyanFirst,
-                download_source_preference: DownloadSourcePreference::GithubFirst,
                 channel: UpdateChannel::Beta,
                 allow_prerelease: true,
                 last_auto_check_at: None,
-                has_mirror_chyan_cdk: false,
-                mirror_chyan_cdk_length: None,
             })
             .expect("save settings");
 
@@ -665,35 +605,6 @@ mod tests {
                 .and_then(|error| error.action.as_deref()),
             Some("retryDownload")
         );
-    }
-
-    #[test]
-    fn settings_tolerate_unavailable_secure_store() {
-        let paths = test_paths("updater-settings-keyring-unavailable");
-        let state = UpdaterState::with_paths_version_and_cdk_store(
-            paths,
-            version::CURRENT_APP_VERSION,
-            cdk_store::CdkStore::invalid_for_tests(),
-        );
-
-        let settings = state.settings().expect("settings should still load");
-
-        assert!(!settings.has_mirror_chyan_cdk);
-    }
-
-    #[test]
-    fn has_mirror_chyan_cdk_propagates_unavailable_secure_store() {
-        let state = UpdaterState::with_paths_version_and_cdk_store(
-            test_paths("updater-has-cdk-keyring-unavailable"),
-            version::CURRENT_APP_VERSION,
-            cdk_store::CdkStore::invalid_for_tests(),
-        );
-
-        let error = state
-            .has_mirror_chyan_cdk()
-            .expect_err("direct CDK status should propagate secure store failures");
-
-        assert_eq!(error.code, "updateSecureStoreUnavailable");
     }
 
     #[test]

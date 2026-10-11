@@ -3,29 +3,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
-pub enum CheckSourcePreference {
-    #[default]
-    MirrorChyanFirst,
-    GithubFirst,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum DownloadSourcePreference {
-    #[default]
-    MirrorChyanFirst,
-    GithubFirst,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum DownloadSourceUsed {
-    MirrorChyan,
-    Github,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "camelCase")]
 pub enum UpdateChannel {
     #[default]
     Stable,
@@ -77,13 +54,9 @@ pub struct UpdateSettingsDto {
     pub auto_check: bool,
     pub auto_download: bool,
     pub check_interval_hours: u32,
-    pub check_source_preference: CheckSourcePreference,
-    pub download_source_preference: DownloadSourcePreference,
     pub channel: UpdateChannel,
     pub allow_prerelease: bool,
     pub last_auto_check_at: Option<DateTime<Utc>>,
-    pub has_mirror_chyan_cdk: bool,
-    pub mirror_chyan_cdk_length: Option<u32>,
 }
 
 impl Default for UpdateSettingsDto {
@@ -92,13 +65,9 @@ impl Default for UpdateSettingsDto {
             auto_check: true,
             auto_download: false,
             check_interval_hours: 24,
-            check_source_preference: CheckSourcePreference::default(),
-            download_source_preference: DownloadSourcePreference::default(),
             channel: UpdateChannel::default(),
             allow_prerelease: false,
             last_auto_check_at: None,
-            has_mirror_chyan_cdk: false,
-            mirror_chyan_cdk_length: None,
         }
     }
 }
@@ -139,7 +108,6 @@ pub struct UpdateStateDto {
     pub asset_sha256: Option<String>,
     pub asset_size: Option<u64>,
     pub asset_url: Option<String>,
-    pub source: Option<DownloadSourceUsed>,
     pub checked_at: Option<DateTime<Utc>>,
     pub downloaded_at: Option<DateTime<Utc>>,
     pub install_log_path: Option<String>,
@@ -171,7 +139,6 @@ impl UpdateStateDto {
             asset_sha256: None,
             asset_size: None,
             asset_url: None,
-            source: None,
             checked_at: None,
             downloaded_at: None,
             install_log_path: None,
@@ -213,9 +180,6 @@ pub struct UpdateCheckResult {
     pub latest_version: Option<String>,
     pub release_notes: Option<String>,
     pub mandatory: bool,
-    pub can_download_from_mirror_chyan: bool,
-    pub can_download_from_github: bool,
-    pub recommended_source: Option<DownloadSourceUsed>,
     pub asset_url: Option<String>,
 }
 
@@ -225,7 +189,6 @@ pub struct UpdateDownloadResult {
     pub status: UpdateStatus,
     pub version: Option<String>,
     pub asset_path: Option<String>,
-    pub source: Option<DownloadSourceUsed>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -245,5 +208,4 @@ pub struct UpdateDownloadProgressDto {
     pub total_bytes: Option<u64>,
     pub percent: Option<f64>,
     pub bytes_per_second: u64,
-    pub source: DownloadSourceUsed,
 }

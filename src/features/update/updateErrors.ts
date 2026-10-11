@@ -46,14 +46,6 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
   const message = getUpdateErrorText(error);
 
   switch (code) {
-    case "mirrorChyanCdkEmpty":
-      return translate("settings.update.error.cdkEmpty", {
-        defaultValue: "Mirror酱 CDK 不能为空",
-      });
-    case "updateSecureStoreUnavailable":
-      return translate("settings.update.error.secureStoreUnavailable", {
-        defaultValue: "系统安全存储暂不可用，请稍后重试",
-      });
     case "updateAlreadyRunning":
       return translate("settings.update.error.alreadyRunning", {
         defaultValue: "已有更新任务正在运行",
@@ -174,73 +166,9 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
       return translate("settings.update.error.downloadNetwork", {
         defaultValue: "下载过程中网络中断，请稍后重试",
       });
-    case "updateMirrorChyanDownloadUnavailable":
-      return translate("settings.update.error.mirrorChyanDownloadUnavailable", {
-        defaultValue: "MirrorChyan 下载源尚未配置，当前阶段请改用 GitHub 下载",
-      });
-    case "updateMirrorChyanApi":
-      return translate("settings.update.error.mirrorChyanApi", {
-        defaultValue: message ?? "Mirror酱 API 请求失败",
-      });
-    case "updateMirrorChyanCdk":
-      return translate("settings.update.error.mirrorChyanCdk", {
-        defaultValue: message ?? "Mirror酱 CDK 验证失败，请检查 CDK 是否正确",
-      });
-    case "updateMirrorChyanCdkExpired":
-      return translate("settings.update.error.mirrorChyanCdkExpired", {
-        defaultValue: "Mirror酱 CDK 已过期，请续费或更换",
-      });
-    case "updateMirrorChyanCdkInvalid":
-      return translate("settings.update.error.mirrorChyanCdkInvalid", {
-        defaultValue: "Mirror酱 CDK 错误，请确认输入是否正确",
-      });
-    case "updateMirrorChyanCdkQuotaExhausted":
-      return translate("settings.update.error.mirrorChyanCdkQuotaExhausted", {
-        defaultValue: "Mirror酱 CDK 今日下载次数已达上限，请明日再试或升级套餐",
-      });
-    case "updateMirrorChyanCdkMismatched":
-      return translate("settings.update.error.mirrorChyanCdkMismatched", {
-        defaultValue: "Mirror酱 CDK 类型与本应用不匹配，请确认 CDK 对应的资源",
-      });
-    case "updateMirrorChyanCdkBlocked":
-      return translate("settings.update.error.mirrorChyanCdkBlocked", {
-        defaultValue: "Mirror酱 CDK 已被封禁，请联系 Mirror酱客服处理",
-      });
-    case "updateMirrorChyanInvalidParams":
-      return translate("settings.update.error.mirrorChyanInvalidParams", {
-        defaultValue: "Mirror酱请求参数不正确，请更新应用后重试",
-      });
-    case "updateMirrorChyanResourceNotFound":
-      return translate("settings.update.error.mirrorChyanResourceNotFound", {
-        defaultValue: "Mirror酱暂无当前平台的资源，请改用 GitHub 下载",
-      });
-    case "updateMirrorChyanInvalidOs":
-      return translate("settings.update.error.mirrorChyanInvalidOs", {
-        defaultValue: "Mirror酱不支持当前操作系统参数，请更新应用后重试",
-      });
-    case "updateMirrorChyanInvalidArch":
-      return translate("settings.update.error.mirrorChyanInvalidArch", {
-        defaultValue: "Mirror酱不支持当前架构参数，请更新应用后重试",
-      });
-    case "updateMirrorChyanInvalidChannel":
-      return translate("settings.update.error.mirrorChyanInvalidChannel", {
-        defaultValue: "Mirror酱不支持当前更新通道参数，请更新应用后重试",
-      });
-    case "updateMirrorChyanBusiness":
-      return translate("settings.update.error.mirrorChyanBusiness", {
-        defaultValue: message ?? "Mirror酱返回了业务错误，请稍后重试",
-      });
-    case "updateMirrorChyanDownloadNeedCdk":
-      return translate("settings.update.error.mirrorChyanDownloadNeedCdk", {
-        defaultValue: "Mirror酱未返回下载链接，请配置有效的 CDK 后重试",
-      });
     case "updateDownloadCancelled":
       return translate("settings.update.cancelled", {
         defaultValue: "下载已取消",
-      });
-    case "updateDownloadSourceInvalid":
-      return translate("settings.update.error.downloadSourceInvalid", {
-        defaultValue: "无效的下载源参数",
       });
     case "updateCheckTaskJoinFailed":
       return translate("settings.update.error.checkTaskJoinFailed", {

@@ -3,10 +3,7 @@ use super::{
     platform::{self, PlatformInfo},
     settings::{self, StoredUpdateSettings},
     state,
-    types::{
-        CheckSourcePreference, DownloadSourcePreference, DownloadSourceUsed, UpdateCheckResult,
-        UpdateCheckStatus, UpdateErrorDto, UpdateStateDto, UpdateStatus,
-    },
+    types::{UpdateCheckResult, UpdateCheckStatus, UpdateErrorDto, UpdateStateDto, UpdateStatus},
     version, UpdatePaths,
 };
 use crate::services::notes::AppError;
@@ -20,25 +17,10 @@ use std::{
     time::Duration,
 };
 
-const MIRROR_CHYAN_MANIFEST_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_MIRROR_MANIFEST_PATH";
 const GITHUB_MANIFEST_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_GITHUB_MANIFEST_PATH";
 const GITHUB_REPO_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_GITHUB_REPO";
 // 自用版：更新只检查本仓库的 GitHub Release
 const DEFAULT_GITHUB_REPO: &str = "chengzhirenchaoshuai/floral-notepaper";
-const MIRROR_CHYAN_API_BASE: &str = "https://mirrorchyan.com/api/resources";
-const MIRROR_CHYAN_RES_ID: &str = "floral";
-const MIRROR_CHYAN_RES_ID_OVERRIDE_ENV: &str = "FLORAL_NOTEPAPER_MIRROR_CHYAN_RES_ID";
-const MIRROR_CHYAN_USER_AGENT: &str = "floral_notepaper";
-
-fn mirror_chyan_res_id() -> &'static str {
-    if let Ok(value) = env::var(MIRROR_CHYAN_RES_ID_OVERRIDE_ENV) {
-        let trimmed = value.trim().to_string();
-        if !trimmed.is_empty() {
-            return Box::leak(trimmed.into_boxed_str());
-        }
-    }
-    MIRROR_CHYAN_RES_ID
-}
 
 macro_rules! debug_log {
     ($($arg:tt)*) => { super::debug_log!("check", $($arg)*) };
@@ -60,116 +42,19 @@ impl UpdateCheckContext {
 
 #[derive(Debug, Clone)]
 struct UpdateCandidate {
-    priority: usize,
     version: String,
-    normalized_version: Version,
     release_notes: Option<String>,
     mandatory: bool,
     asset_name: String,
     asset_sha256: Option<String>,
     asset_size: u64,
     asset_url: Option<String>,
-    mirror_chyan_asset_url: Option<String>,
-    github_asset_url: Option<String>,
-    can_download_from_mirror_chyan: bool,
-    can_download_from_github: bool,
-    /// Whether SHA-256 hash verification is enabled for this candidate.
-    /// Set to `false` for MirrorChyan source because the MirrorChyan API does not
-    /// return asset checksums in its response.
-    ///
-    /// This field is consumed at the candidate-construction site for clarity
-    /// and logging; the actual enforcement happens in `DownloadPlan`, which
-    /// derives the flag from the download source at plan-resolution time.
-    #[allow(dead_code)]
-    sha256_verification_enabled: bool,
-}
-
-impl UpdateCandidate {
-    fn asset_url_for_source(&self, source: Option<&DownloadSourceUsed>) -> Option<String> {
-        match source {
-            Some(DownloadSourceUsed::MirrorChyan) => self.mirror_chyan_asset_url.clone(),
-            Some(DownloadSourceUsed::Github) => self.github_asset_url.clone(),
-            None => None,
-        }
-        .or_else(|| self.asset_url.clone())
-        .or_else(|| self.github_asset_url.clone())
-        .or_else(|| self.mirror_chyan_asset_url.clone())
-    }
 }
 
 #[derive(Debug, Clone)]
 enum ProviderCheck {
     NotAvailable,
     Available(Box<UpdateCandidate>),
-}
-
-trait UpdateCheckProvider {
-    fn label(&self) -> &'static str;
-    fn check(
-        &self,
-        context: &UpdateCheckContext,
-        priority: usize,
-    ) -> Result<ProviderCheck, AppError>;
-}
-
-#[derive(Debug, Clone, Default)]
-struct MirrorChyanProvider {
-    manifest_path: Option<PathBuf>,
-    cdk: Option<String>,
-    offline: bool,
-}
-
-impl MirrorChyanProvider {
-    pub fn from_env() -> Self {
-        Self {
-            manifest_path: env_manifest_path(MIRROR_CHYAN_MANIFEST_PATH_ENV),
-            cdk: None,
-            offline: env::var("FLORAL_NOTEPAPER_UPDATE_OFFLINE").is_ok(),
-        }
-    }
-
-    pub fn with_cdk(mut self, cdk: Option<String>) -> Self {
-        self.cdk = cdk;
-        self
-    }
-
-    #[cfg(test)]
-    fn with_manifest_path(path: PathBuf) -> Self {
-        Self {
-            manifest_path: Some(path),
-            cdk: None,
-            offline: false,
-        }
-    }
-
-    #[cfg(test)]
-    fn offline() -> Self {
-        Self {
-            manifest_path: None,
-            cdk: None,
-            offline: true,
-        }
-    }
-}
-
-impl UpdateCheckProvider for MirrorChyanProvider {
-    fn label(&self) -> &'static str {
-        "MirrorChyan"
-    }
-
-    fn check(
-        &self,
-        context: &UpdateCheckContext,
-        priority: usize,
-    ) -> Result<ProviderCheck, AppError> {
-        if let Some(manifest_path) = &self.manifest_path {
-            return load_manifest_candidate(self.label(), manifest_path, context, priority, true);
-        }
-        if self.offline {
-            return Err(errors::provider_not_configured(self.label()));
-        }
-        check_mirror_chyan_api(context, priority, self.cdk.as_deref())
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -179,6 +64,8 @@ struct GithubProvider {
 }
 
 impl GithubProvider {
+    const LABEL: &'static str = "GitHub";
+
     pub fn from_env() -> Self {
         Self {
             manifest_path: env_manifest_path(GITHUB_MANIFEST_PATH_ENV),
@@ -201,52 +88,32 @@ impl GithubProvider {
             offline: true,
         }
     }
-}
 
-impl UpdateCheckProvider for GithubProvider {
-    fn label(&self) -> &'static str {
-        "GitHub"
-    }
-
-    fn check(
-        &self,
-        context: &UpdateCheckContext,
-        priority: usize,
-    ) -> Result<ProviderCheck, AppError> {
+    fn check(&self, context: &UpdateCheckContext) -> Result<ProviderCheck, AppError> {
         if let Some(manifest_path) = &self.manifest_path {
-            return load_manifest_candidate(self.label(), manifest_path, context, priority, false);
+            return load_manifest_candidate(Self::LABEL, manifest_path, context);
         }
 
         if self.offline {
-            return Err(errors::provider_not_configured(self.label()));
+            return Err(errors::provider_not_configured(Self::LABEL));
         }
 
-        check_github_api(context, priority)
+        check_github_api(context)
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct UpdateCheckService {
-    mirror_chyan: MirrorChyanProvider,
     github: GithubProvider,
-    // 自用版不使用 Mirror酱：生产环境关闭，测试中保留以覆盖原有逻辑
-    mirror_chyan_enabled: bool,
     platform_override: Option<PlatformInfo>,
 }
 
 impl UpdateCheckService {
     pub(crate) fn from_env() -> Self {
         Self {
-            mirror_chyan: MirrorChyanProvider::from_env(),
             github: GithubProvider::from_env(),
-            mirror_chyan_enabled: false,
             platform_override: None,
         }
-    }
-
-    pub(crate) fn with_cdk(mut self, cdk: Option<String>) -> Self {
-        self.mirror_chyan = self.mirror_chyan.with_cdk(cdk);
-        self
     }
 
     pub(crate) fn run(
@@ -306,25 +173,17 @@ impl UpdateCheckService {
     }
 
     #[cfg(test)]
-    fn with_providers(mirror_chyan: MirrorChyanProvider, github: GithubProvider) -> Self {
+    fn with_provider(github: GithubProvider) -> Self {
         Self {
-            mirror_chyan,
             github,
-            mirror_chyan_enabled: true,
             platform_override: None,
         }
     }
 
     #[cfg(test)]
-    fn with_providers_and_platform(
-        mirror_chyan: MirrorChyanProvider,
-        github: GithubProvider,
-        platform: PlatformInfo,
-    ) -> Self {
+    fn with_provider_and_platform(github: GithubProvider, platform: PlatformInfo) -> Self {
         Self {
-            mirror_chyan,
             github,
-            mirror_chyan_enabled: true,
             platform_override: Some(platform),
         }
     }
@@ -340,140 +199,65 @@ impl UpdateCheckService {
         settings: &StoredUpdateSettings,
         context: &UpdateCheckContext,
     ) -> Result<(UpdateCheckResult, UpdateStateDto), AppError> {
-        let provider_order: Vec<_> = check_provider_order(&settings.check_source_preference)
-            .into_iter()
-            .filter(|source| {
-                self.mirror_chyan_enabled || !matches!(source, DownloadSourceUsed::MirrorChyan)
-            })
-            .collect();
-        debug_log!(
-            "提供者检查顺序={:?} 检查源偏好={:?}",
-            provider_order,
-            settings.check_source_preference
-        );
-        let mut available = Vec::new();
-        let mut saw_not_available = false;
-        let mut provider_errors = Vec::new();
-
-        for (priority, source) in provider_order.into_iter().enumerate() {
-            debug_log!("尝试提供者 source={source:?} priority={priority}");
-            let provider_result = match source {
-                DownloadSourceUsed::MirrorChyan => self.mirror_chyan.check(context, priority),
-                DownloadSourceUsed::Github => self.github.check(context, priority),
-            };
-
-            match provider_result {
-                Ok(ProviderCheck::Available(candidate)) => {
-                    debug_log!("提供者 {source:?} 返回可用版本={}", candidate.version);
-                    available.push(*candidate);
-                }
-                Ok(ProviderCheck::NotAvailable) => {
-                    debug_log!("提供者 {source:?} 返回无更新");
-                    saw_not_available = true;
-                    // Mirror 酱返回无更新说明当前已是最新版，无需再查 GitHub。
-                    if matches!(source, DownloadSourceUsed::MirrorChyan) {
-                        debug_log!("Mirror 酱已确认无更新，跳过后续提供者");
-                        break;
-                    }
-                }
-                Err(error) => {
-                    debug_log!(
-                        "提供者 {source:?} 返回错误 code={} message={}",
-                        error.code,
-                        error.message
-                    );
-                    provider_errors.push(error);
-                }
+        match self.github.check(context) {
+            Ok(ProviderCheck::Available(candidate)) => {
+                debug_log!("GitHub 返回可用版本={}", candidate.version);
+                let candidate = *candidate;
+                let result = UpdateCheckResult {
+                    status: UpdateCheckStatus::Available,
+                    current_version: context.current_version_text(),
+                    latest_version: Some(candidate.version.clone()),
+                    release_notes: candidate.release_notes.clone(),
+                    mandatory: candidate.mandatory,
+                    asset_url: candidate.asset_url.clone(),
+                };
+                let next_state = UpdateStateDto {
+                    status: UpdateStatus::Available,
+                    current_version: context.current_version_text(),
+                    latest_version: Some(candidate.version),
+                    channel: settings.channel.clone(),
+                    asset_name: Some(candidate.asset_name),
+                    asset_path: None,
+                    asset_sha256: candidate.asset_sha256,
+                    asset_size: Some(candidate.asset_size),
+                    asset_url: candidate.asset_url,
+                    checked_at: Some(Utc::now()),
+                    downloaded_at: None,
+                    install_log_path: None,
+                    install_mode: None,
+                    install_started_at: None,
+                    install_scheduled_at: None,
+                    install_kind: None,
+                    last_error: None,
+                };
+                Ok((result, next_state))
+            }
+            Ok(ProviderCheck::NotAvailable) => {
+                debug_log!("GitHub 返回无更新");
+                let result = UpdateCheckResult {
+                    status: UpdateCheckStatus::NotAvailable,
+                    current_version: context.current_version_text(),
+                    latest_version: None,
+                    release_notes: None,
+                    mandatory: false,
+                    asset_url: None,
+                };
+                let next_state = UpdateStateDto {
+                    checked_at: Some(Utc::now()),
+                    channel: settings.channel.clone(),
+                    ..UpdateStateDto::idle_with_version(context.current_version_text())
+                };
+                Ok((result, next_state))
+            }
+            Err(error) => {
+                debug_log!(
+                    "GitHub 检查失败 code={} message={}",
+                    error.code,
+                    error.message
+                );
+                Err(normalize_provider_error(error))
             }
         }
-
-        debug_log!("可用候选数={}", available.len());
-        if let Some(candidate) = merge_candidates(available) {
-            debug_log!(
-                "合并后版本={} 推荐源={:?}",
-                candidate.version,
-                recommended_source(
-                    &settings.download_source_preference,
-                    candidate.can_download_from_mirror_chyan,
-                    candidate.can_download_from_github,
-                )
-            );
-            let recommended_source = recommended_source(
-                &settings.download_source_preference,
-                candidate.can_download_from_mirror_chyan,
-                candidate.can_download_from_github,
-            );
-            let asset_url = candidate.asset_url_for_source(recommended_source.as_ref());
-            let result = UpdateCheckResult {
-                status: UpdateCheckStatus::Available,
-                current_version: context.current_version_text(),
-                latest_version: Some(candidate.version.clone()),
-                release_notes: candidate.release_notes.clone(),
-                mandatory: candidate.mandatory,
-                can_download_from_mirror_chyan: candidate.can_download_from_mirror_chyan,
-                can_download_from_github: candidate.can_download_from_github,
-                recommended_source: recommended_source.clone(),
-                asset_url: asset_url.clone(),
-            };
-            let next_state = UpdateStateDto {
-                status: UpdateStatus::Available,
-                current_version: context.current_version_text(),
-                latest_version: Some(candidate.version),
-                channel: settings.channel.clone(),
-                asset_name: Some(candidate.asset_name),
-                asset_path: None,
-                asset_sha256: candidate.asset_sha256,
-                asset_size: Some(candidate.asset_size),
-                asset_url,
-                source: recommended_source,
-                checked_at: Some(Utc::now()),
-                downloaded_at: None,
-                install_log_path: None,
-                install_mode: None,
-                install_started_at: None,
-                install_scheduled_at: None,
-                install_kind: None,
-                last_error: None,
-            };
-            return Ok((result, next_state));
-        }
-
-        if saw_not_available {
-            let result = UpdateCheckResult {
-                status: UpdateCheckStatus::NotAvailable,
-                current_version: context.current_version_text(),
-                latest_version: None,
-                release_notes: None,
-                mandatory: false,
-                can_download_from_mirror_chyan: false,
-                can_download_from_github: false,
-                recommended_source: None,
-                asset_url: None,
-            };
-            let next_state = UpdateStateDto {
-                status: UpdateStatus::Idle,
-                current_version: context.current_version_text(),
-                latest_version: None,
-                channel: settings.channel.clone(),
-                asset_name: None,
-                asset_path: None,
-                asset_sha256: None,
-                asset_size: None,
-                asset_url: None,
-                source: None,
-                checked_at: Some(Utc::now()),
-                downloaded_at: None,
-                install_log_path: None,
-                install_mode: None,
-                install_started_at: None,
-                install_scheduled_at: None,
-                install_kind: None,
-                last_error: None,
-            };
-            return Ok((result, next_state));
-        }
-
-        Err(aggregate_provider_errors(provider_errors))
     }
 }
 
@@ -490,234 +274,6 @@ fn github_repo() -> String {
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| DEFAULT_GITHUB_REPO.to_string())
-}
-
-// --- Mirror酱 API ---
-
-#[derive(Debug, Deserialize)]
-struct MirrorChyanApiResponse {
-    code: i32,
-    msg: String,
-    data: Option<MirrorChyanApiData>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MirrorChyanApiData {
-    version_name: String,
-    #[allow(dead_code)]
-    version_number: Option<u64>,
-    #[allow(dead_code)]
-    channel: Option<String>,
-    #[allow(dead_code)]
-    os: Option<String>,
-    #[allow(dead_code)]
-    arch: Option<String>,
-    release_note: Option<String>,
-    url: Option<String>,
-}
-
-fn mirror_chyan_os_param(os: &platform::Os) -> &'static str {
-    match os {
-        platform::Os::Windows => "windows",
-        platform::Os::Macos => "darwin",
-        platform::Os::Unsupported => "unknown",
-    }
-}
-
-fn mirror_chyan_arch_param(arch: &platform::Arch) -> &'static str {
-    match arch {
-        platform::Arch::X86_64 => "amd64",
-        platform::Arch::Aarch64 => "arm64",
-        platform::Arch::Unsupported => "unknown",
-    }
-}
-
-fn extract_filename_from_url(url: &str) -> Option<String> {
-    let path = url.split('?').next().unwrap_or(url);
-    let name = path.rsplit('/').next()?;
-    if name.is_empty() {
-        return None;
-    }
-    Some(name.to_string())
-}
-
-fn build_mirror_chyan_api_client() -> Result<Client, AppError> {
-    Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(15))
-        .user_agent("floral-notepaper-updater")
-        .build()
-        .map_err(|error| errors::mirror_chyan_api_error(format!("无法创建 HTTP 客户端：{error}")))
-}
-
-fn mirror_chyan_request_error(error: reqwest::Error) -> AppError {
-    errors::mirror_chyan_api_error(mirror_chyan_request_error_message(&error))
-}
-
-fn mirror_chyan_request_error_message(error: &reqwest::Error) -> String {
-    if error.is_timeout() {
-        return "请求超时".into();
-    }
-    if error.is_connect() {
-        return "网络连接失败".into();
-    }
-    if error.is_redirect() {
-        return "重定向失败".into();
-    }
-    if let Some(status) = error.status() {
-        return format!("HTTP {}", status.as_u16());
-    }
-    "请求失败".into()
-}
-
-/// Common MirrorChyan API call: URL construction, HTTP request, JSON parsing,
-/// and MirrorChyan error-code handling.  Returns [`MirrorChyanApiData`] on success.
-fn call_mirror_chyan_api(
-    current_version: &str,
-    os: &str,
-    arch: &str,
-    cdk: Option<&str>,
-) -> Result<MirrorChyanApiData, AppError> {
-    let res_id = mirror_chyan_res_id();
-    let mut url = reqwest::Url::parse(&format!("{MIRROR_CHYAN_API_BASE}/{res_id}/latest"))
-        .map_err(|e| errors::mirror_chyan_api_error(format!("URL 构建失败：{e}")))?;
-    url.query_pairs_mut()
-        .append_pair("current_version", current_version)
-        .append_pair("os", os)
-        .append_pair("arch", arch)
-        .append_pair("user_agent", MIRROR_CHYAN_USER_AGENT);
-    if let Some(cdk) = cdk.filter(|s| !s.trim().is_empty()) {
-        url.query_pairs_mut().append_pair("cdk", cdk);
-    }
-
-    let client = build_mirror_chyan_api_client()?;
-    let response = client.get(url).send().map_err(mirror_chyan_request_error)?;
-
-    let status = response.status();
-    if !status.is_success() && status.as_u16() != 403 {
-        return Err(errors::mirror_chyan_api_error(format!(
-            "HTTP {}",
-            status.as_u16()
-        )));
-    }
-
-    let body = response.text().map_err(|error| {
-        errors::mirror_chyan_api_error(format!(
-            "响应读取失败：{}",
-            mirror_chyan_request_error_message(&error)
-        ))
-    })?;
-    let api_response: MirrorChyanApiResponse = serde_json::from_str(&body)
-        .map_err(|error| errors::mirror_chyan_api_error(format!("响应解析失败：{error}")))?;
-
-    if api_response.code < 0 {
-        return Err(errors::mirror_chyan_api_error(format!(
-            "服务端错误 (code={})：{}",
-            api_response.code, api_response.msg
-        )));
-    }
-
-    if api_response.code > 0 {
-        let code = api_response.code;
-        return Err(match code {
-            7001..=7005 => errors::mirror_chyan_cdk_error(code, api_response.msg),
-            _ => errors::mirror_chyan_resource_error(code, api_response.msg),
-        });
-    }
-
-    api_response
-        .data
-        .ok_or_else(|| errors::mirror_chyan_api_error("响应缺少 data 字段"))
-}
-
-fn check_mirror_chyan_api(
-    context: &UpdateCheckContext,
-    priority: usize,
-    cdk: Option<&str>,
-) -> Result<ProviderCheck, AppError> {
-    let os = mirror_chyan_os_param(&context.platform.os);
-    let arch = mirror_chyan_arch_param(&context.platform.arch);
-    let current_version = format!("v{}", context.current_version_text());
-    debug_log!(
-        "MirrorChyan API 请求 os={os} arch={arch} current={current_version} has_cdk={}",
-        cdk.is_some()
-    );
-
-    let data = call_mirror_chyan_api(&current_version, os, arch, cdk)?;
-    debug_log!(
-        "MirrorChyan API 返回 version={} has_url={}",
-        data.version_name,
-        data.url.is_some()
-    );
-
-    let version_str = data
-        .version_name
-        .trim_start_matches('v')
-        .trim_start_matches('V');
-    let normalized_version = version::normalize_version(version_str)?;
-
-    if !version::is_newer_version(
-        &context.current_version,
-        &normalized_version,
-        context.allow_prerelease,
-    ) {
-        return Ok(ProviderCheck::NotAvailable);
-    }
-
-    let mirror_chyan_asset_url = data.url;
-    let asset_name = mirror_chyan_asset_url
-        .as_deref()
-        .and_then(extract_filename_from_url)
-        .unwrap_or_else(|| format!("floral-notepaper_{version_str}_{os}_{arch}"));
-    let has_url = mirror_chyan_asset_url.is_some();
-    // MirrorChyan API does not provide asset SHA-256 checksums in its response,
-    // so hash verification is explicitly disabled for MirrorChyan-sourced downloads.
-    debug_log!(
-        "MirrorChyan API response does not include SHA-256 checksum; \
-         verification disabled for MirrorChyan source downloads"
-    );
-    Ok(ProviderCheck::Available(Box::new(UpdateCandidate {
-        priority,
-        version: version_str.to_string(),
-        normalized_version,
-        release_notes: data.release_note.filter(|s| !s.trim().is_empty()),
-        mandatory: false,
-        asset_name,
-        asset_sha256: None,
-        asset_size: 0,
-        asset_url: mirror_chyan_asset_url.clone(),
-        mirror_chyan_asset_url,
-        github_asset_url: None,
-        can_download_from_mirror_chyan: has_url,
-        can_download_from_github: false,
-        sha256_verification_enabled: false,
-    })))
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct MirrorChyanDownloadInfo {
-    pub url: String,
-}
-
-pub(crate) fn fetch_mirror_chyan_download_url(
-    platform: &PlatformInfo,
-    current_version: &str,
-    cdk: Option<&str>,
-) -> Result<MirrorChyanDownloadInfo, AppError> {
-    let os = mirror_chyan_os_param(&platform.os);
-    let arch = mirror_chyan_arch_param(&platform.arch);
-    let version = format!("v{current_version}");
-
-    let data = call_mirror_chyan_api(&version, os, arch, cdk)?;
-
-    let download_url = data.url.ok_or_else(|| {
-        errors::app_error(
-            "updateMirrorChyanDownloadNeedCdk",
-            "Mirror酱未返回下载链接，请配置有效的 CDK",
-        )
-    })?;
-
-    Ok(MirrorChyanDownloadInfo { url: download_url })
 }
 
 fn build_github_api_client() -> Result<Client, AppError> {
@@ -848,10 +404,7 @@ pub(crate) fn fetch_github_download_info(
     })
 }
 
-fn check_github_api(
-    context: &UpdateCheckContext,
-    priority: usize,
-) -> Result<ProviderCheck, AppError> {
+fn check_github_api(context: &UpdateCheckContext) -> Result<ProviderCheck, AppError> {
     debug_log!("GitHub API 请求 latest release");
     let release = fetch_latest_github_release()?;
 
@@ -910,20 +463,13 @@ fn check_github_api(
         .and_then(parse_sha256_from_digest);
 
     Ok(ProviderCheck::Available(Box::new(UpdateCandidate {
-        priority,
         version: version_str.to_string(),
-        normalized_version,
         release_notes: release.body,
         mandatory: false,
         asset_name: matched_api_asset.name.clone(),
         asset_sha256,
         asset_size: matched_api_asset.size,
         asset_url: Some(matched_api_asset.browser_download_url.clone()),
-        mirror_chyan_asset_url: None,
-        github_asset_url: Some(matched_api_asset.browser_download_url.clone()),
-        can_download_from_mirror_chyan: false,
-        can_download_from_github: true,
-        sha256_verification_enabled: true,
     })))
 }
 
@@ -957,8 +503,6 @@ fn load_manifest_candidate(
     provider: &str,
     manifest_path: &Path,
     context: &UpdateCheckContext,
-    priority: usize,
-    is_mirror_chyan_provider: bool,
 ) -> Result<ProviderCheck, AppError> {
     let manifest_bytes = fs::read(manifest_path).map_err(|error| {
         let error = errors::with_detail(
@@ -986,177 +530,32 @@ fn load_manifest_candidate(
         return Ok(ProviderCheck::NotAvailable);
     }
 
-    let mirror_chyan_asset_url = asset.mirror_chyan_url.clone();
-    let github_asset_url = (!asset.github_url.trim().is_empty()).then(|| asset.github_url.clone());
-    let has_mirror_chyan_url = mirror_chyan_asset_url.is_some();
-    let has_github_url = github_asset_url.is_some();
-    let asset_url = if is_mirror_chyan_provider {
-        mirror_chyan_asset_url
-            .clone()
-            .or_else(|| github_asset_url.clone())
-    } else {
-        github_asset_url.clone()
-    };
+    let asset_url = (!asset.github_url.trim().is_empty()).then(|| asset.github_url.clone());
 
     Ok(ProviderCheck::Available(Box::new(UpdateCandidate {
-        priority,
         version: manifest.version.clone(),
-        normalized_version: candidate_version,
         release_notes: manifest.release_notes.clone(),
         mandatory: manifest.mandatory,
         asset_name: asset.name.clone(),
         asset_sha256: Some(asset.sha256),
         asset_size: asset.size,
         asset_url,
-        mirror_chyan_asset_url,
-        github_asset_url,
-        can_download_from_mirror_chyan: has_mirror_chyan_url,
-        can_download_from_github: has_github_url,
-        sha256_verification_enabled: true,
     })))
 }
 
-fn check_provider_order(preference: &CheckSourcePreference) -> Vec<DownloadSourceUsed> {
-    match preference {
-        CheckSourcePreference::MirrorChyanFirst => {
-            vec![DownloadSourceUsed::MirrorChyan, DownloadSourceUsed::Github]
-        }
-        CheckSourcePreference::GithubFirst => {
-            vec![DownloadSourceUsed::Github, DownloadSourceUsed::MirrorChyan]
-        }
+/// 检查源未配置时统一转换为 updateSourceNotConfigured，便于前端提示
+fn normalize_provider_error(error: AppError) -> AppError {
+    if error.code != "updateProviderNotConfigured" {
+        return error;
     }
-}
-
-fn merge_candidates(mut candidates: Vec<UpdateCandidate>) -> Option<UpdateCandidate> {
-    debug_log!("合并候选版本 候选数={}", candidates.len());
-    if candidates.is_empty() {
-        return None;
+    match error.details.get("provider") {
+        Some(provider) => errors::with_detail(
+            errors::source_not_configured(),
+            "providers",
+            provider.clone(),
+        ),
+        None => errors::source_not_configured(),
     }
-
-    candidates.sort_by(|left, right| {
-        right
-            .normalized_version
-            .cmp(&left.normalized_version)
-            .then(left.priority.cmp(&right.priority))
-    });
-
-    let best_version = candidates.first()?.normalized_version.clone();
-    let mut matching_candidates = candidates
-        .into_iter()
-        .filter(|candidate| candidate.normalized_version == best_version)
-        .collect::<Vec<_>>();
-    matching_candidates.sort_by_key(|candidate| candidate.priority);
-
-    let mut primary = matching_candidates.remove(0);
-    let fallback_candidates = matching_candidates;
-
-    primary.can_download_from_mirror_chyan |= fallback_candidates
-        .iter()
-        .any(|candidate| candidate.can_download_from_mirror_chyan);
-    primary.can_download_from_github |= fallback_candidates
-        .iter()
-        .any(|candidate| candidate.can_download_from_github);
-    primary.mandatory |= fallback_candidates
-        .iter()
-        .any(|candidate| candidate.mandatory);
-
-    if primary.mirror_chyan_asset_url.is_none() {
-        primary.mirror_chyan_asset_url = fallback_candidates
-            .iter()
-            .find_map(|candidate| candidate.mirror_chyan_asset_url.clone());
-    }
-    if primary.github_asset_url.is_none() {
-        primary.github_asset_url = fallback_candidates
-            .iter()
-            .find_map(|candidate| candidate.github_asset_url.clone());
-    }
-    if primary.asset_sha256.is_none() {
-        primary.asset_sha256 = fallback_candidates
-            .iter()
-            .find_map(|candidate| candidate.asset_sha256.clone());
-    }
-    if primary.asset_size == 0 {
-        if let Some(candidate) = fallback_candidates
-            .iter()
-            .find(|candidate| candidate.asset_size > 0)
-        {
-            primary.asset_size = candidate.asset_size;
-            primary.asset_name = candidate.asset_name.clone();
-        }
-    }
-
-    if primary
-        .release_notes
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .is_empty()
-    {
-        primary.release_notes = fallback_candidates.iter().find_map(|candidate| {
-            candidate
-                .release_notes
-                .clone()
-                .filter(|notes| !notes.trim().is_empty())
-        });
-    }
-
-    Some(primary)
-}
-
-fn recommended_source(
-    preference: &DownloadSourcePreference,
-    can_download_from_mirror_chyan: bool,
-    can_download_from_github: bool,
-) -> Option<DownloadSourceUsed> {
-    match preference {
-        DownloadSourcePreference::MirrorChyanFirst => {
-            if can_download_from_mirror_chyan {
-                Some(DownloadSourceUsed::MirrorChyan)
-            } else if can_download_from_github {
-                Some(DownloadSourceUsed::Github)
-            } else {
-                None
-            }
-        }
-        DownloadSourcePreference::GithubFirst => {
-            if can_download_from_github {
-                Some(DownloadSourceUsed::Github)
-            } else if can_download_from_mirror_chyan {
-                Some(DownloadSourceUsed::MirrorChyan)
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn aggregate_provider_errors(errors_list: Vec<AppError>) -> AppError {
-    if errors_list.is_empty() {
-        return errors::source_not_configured();
-    }
-
-    if errors_list
-        .iter()
-        .all(|error| error.code == "updateProviderNotConfigured")
-    {
-        let providers = errors_list
-            .iter()
-            .filter_map(|error| error.details.get("provider"))
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(",");
-        let error = errors::source_not_configured();
-        return if providers.is_empty() {
-            error
-        } else {
-            errors::with_detail(error, "providers", providers)
-        };
-    }
-
-    errors_list
-        .into_iter()
-        .find(|error| error.code != "updateProviderNotConfigured")
-        .unwrap_or_else(errors::source_not_configured)
 }
 
 fn failed_state(
@@ -1174,7 +573,6 @@ fn failed_state(
         asset_sha256: context.previous_state.asset_sha256.clone(),
         asset_size: context.previous_state.asset_size,
         asset_url: context.previous_state.asset_url.clone(),
-        source: context.previous_state.source.clone(),
         checked_at: Some(Utc::now()),
         downloaded_at: context.previous_state.downloaded_at,
         install_log_path: context.previous_state.install_log_path.clone(),
@@ -1199,20 +597,6 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
         "updatePlatformUnsupported"
         | "updatePortableManualOnly"
         | "updateStoreManagedManualOnly" => Some("useSupportedInstall"),
-        "updateGithubApi" | "updateGithubRateLimited" | "updateGithubNoAssets" => Some("retry"),
-        "updateMirrorChyanApi" => Some("retry"),
-        "updateMirrorChyanCdkExpired"
-        | "updateMirrorChyanCdkInvalid"
-        | "updateMirrorChyanCdkMismatched"
-        | "updateMirrorChyanCdkBlocked"
-        | "updateMirrorChyanCdk" => Some("checkCdk"),
-        "updateMirrorChyanCdkQuotaExhausted" => Some("waitOrUpgrade"),
-        "updateMirrorChyanInvalidParams"
-        | "updateMirrorChyanInvalidOs"
-        | "updateMirrorChyanInvalidArch"
-        | "updateMirrorChyanInvalidChannel" => Some("reportBug"),
-        "updateMirrorChyanResourceNotFound" => Some("retry"),
-        "updateMirrorChyanBusiness" => Some("retry"),
         _ => Some("retry"),
     }
 }
@@ -1259,13 +643,8 @@ mod tests {
         }
     }
 
-    fn test_settings(preference: CheckSourcePreference) -> StoredUpdateSettings {
-        StoredUpdateSettings {
-            download_source_preference: DownloadSourcePreference::GithubFirst,
-            check_source_preference: preference,
-            channel: super::super::types::UpdateChannel::Stable,
-            ..StoredUpdateSettings::default()
-        }
+    fn test_settings() -> StoredUpdateSettings {
+        StoredUpdateSettings::default()
     }
 
     fn write_manifest(paths: &UpdatePaths, name: &str, version: &str) -> PathBuf {
@@ -1280,66 +659,23 @@ mod tests {
 
     #[test]
     fn returns_source_not_configured_when_no_provider_fixture_exists_and_github_only() {
-        let service = UpdateCheckService::with_providers_and_platform(
-            MirrorChyanProvider::offline(),
+        let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::offline(),
             test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
         );
-        let settings = test_settings(CheckSourcePreference::GithubFirst);
+        let settings = test_settings();
 
         let result = service.evaluate(&settings, &test_context(InstallKind::MacosAppBundle));
         assert!(result.is_err());
     }
 
     #[test]
-    fn falls_back_to_mirror_chyan_when_github_is_not_configured() {
-        let paths = test_paths("check-github-first-mirror-chyan-fallback");
-        let mirror_chyan_manifest = write_manifest(&paths, "mirror.json", "1.0.5");
-        let service = UpdateCheckService::with_providers(
-            MirrorChyanProvider::with_manifest_path(mirror_chyan_manifest),
-            GithubProvider::offline(),
-        );
-        let settings = test_settings(CheckSourcePreference::GithubFirst);
-
-        let (result, _) = service
-            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
-            .expect("github fails but mirror_chyan succeeds as fallback");
-
-        assert_eq!(result.status, UpdateCheckStatus::Available);
-        assert_eq!(result.latest_version.as_deref(), Some("1.0.5"));
-    }
-
-    #[test]
-    fn prefers_highest_available_version_across_providers() {
-        let paths = test_paths("check-highest-version");
-        let mirror_chyan_manifest = write_manifest(&paths, "mirror.json", "1.0.5");
-        let github_manifest = write_manifest(&paths, "github.json", "1.0.6");
-        let service = UpdateCheckService::with_providers(
-            MirrorChyanProvider::with_manifest_path(mirror_chyan_manifest),
-            GithubProvider::with_manifest_path(github_manifest),
-        );
-        let settings = test_settings(CheckSourcePreference::MirrorChyanFirst);
-
-        let (result, next_state) = service
-            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
-            .expect("configured manifests should return result");
-
-        assert_eq!(result.status, UpdateCheckStatus::Available);
-        assert_eq!(result.latest_version.as_deref(), Some("1.0.6"));
-        assert_eq!(result.recommended_source, Some(DownloadSourceUsed::Github));
-        assert_eq!(next_state.status, UpdateStatus::Available);
-        assert_eq!(next_state.latest_version.as_deref(), Some("1.0.6"));
-    }
-
-    #[test]
     fn returns_not_available_when_candidate_is_not_newer() {
         let paths = test_paths("check-not-available");
         let github_manifest = write_manifest(&paths, "github.json", "1.0.3");
-        let service = UpdateCheckService::with_providers(
-            MirrorChyanProvider::offline(),
-            GithubProvider::with_manifest_path(github_manifest),
-        );
-        let settings = test_settings(CheckSourcePreference::GithubFirst);
+        let service =
+            UpdateCheckService::with_provider(GithubProvider::with_manifest_path(github_manifest));
+        let settings = test_settings();
 
         let (result, next_state) = service
             .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
@@ -1354,11 +690,9 @@ mod tests {
     fn stores_asset_url_in_state_from_manifest_fixture() {
         let paths = test_paths("check-asset-url");
         let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
-        let service = UpdateCheckService::with_providers(
-            MirrorChyanProvider::offline(),
-            GithubProvider::with_manifest_path(github_manifest),
-        );
-        let settings = test_settings(CheckSourcePreference::GithubFirst);
+        let service =
+            UpdateCheckService::with_provider(GithubProvider::with_manifest_path(github_manifest));
+        let settings = test_settings();
 
         let (result, next_state) = service
             .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
@@ -1369,105 +703,10 @@ mod tests {
     }
 
     #[test]
-    fn stores_asset_url_for_recommended_download_source() {
-        let paths = test_paths("check-recommended-source-url");
-        let mirror_chyan_manifest = write_manifest(&paths, "mirror.json", "1.0.5");
-        let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
-        let service = UpdateCheckService::with_providers(
-            MirrorChyanProvider::with_manifest_path(mirror_chyan_manifest),
-            GithubProvider::with_manifest_path(github_manifest),
-        );
-        let mut settings = test_settings(CheckSourcePreference::GithubFirst);
-        settings.download_source_preference = DownloadSourcePreference::MirrorChyanFirst;
-
-        let (result, next_state) = service
-            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
-            .expect("available update should have recommended asset url");
-
-        assert_eq!(
-            result.recommended_source,
-            Some(DownloadSourceUsed::MirrorChyan)
-        );
-        assert_eq!(next_state.source, Some(DownloadSourceUsed::MirrorChyan));
-        assert_eq!(
-            result.asset_url.as_deref(),
-            Some("https://mirrorchyan.com/resources/download/floral-notepaper-1.0.5-macos-aarch64")
-        );
-        assert_eq!(next_state.asset_url, result.asset_url);
-    }
-
-    #[test]
-    fn merge_candidates_enriches_mirror_chyan_result_with_github_metadata() {
-        let mirror_chyan_candidate = UpdateCandidate {
-            priority: 0,
-            version: "1.0.5".into(),
-            normalized_version: Version::new(1, 0, 5),
-            release_notes: None,
-            mandatory: false,
-            asset_name: "mirror-chyan-generated.zip".into(),
-            asset_sha256: None,
-            asset_size: 0,
-            asset_url: Some("https://mirrorchyan.com/resources/download/floral".into()),
-            mirror_chyan_asset_url: Some(
-                "https://mirrorchyan.com/resources/download/floral".into(),
-            ),
-            github_asset_url: None,
-            can_download_from_mirror_chyan: true,
-            can_download_from_github: false,
-            sha256_verification_enabled: false,
-        };
-        let github_candidate = UpdateCandidate {
-            priority: 1,
-            version: "1.0.5".into(),
-            normalized_version: Version::new(1, 0, 5),
-            release_notes: Some("GitHub notes".into()),
-            mandatory: false,
-            asset_name: "floral-notepaper_1.0.5_macos_aarch64_app.zip".into(),
-            asset_sha256: Some("3333333333333333333333333333333333333333333333333333333333333333".into()),
-            asset_size: 22345678,
-            asset_url: Some("https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_macos_aarch64_app.zip".into()),
-            mirror_chyan_asset_url: None,
-            github_asset_url: Some("https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_macos_aarch64_app.zip".into()),
-            can_download_from_mirror_chyan: false,
-            can_download_from_github: true,
-            sha256_verification_enabled: true,
-        };
-
-        let merged = merge_candidates(vec![mirror_chyan_candidate, github_candidate])
-            .expect("same-version candidates should merge");
-
-        assert_eq!(
-            merged.asset_name,
-            "floral-notepaper_1.0.5_macos_aarch64_app.zip"
-        );
-        assert_eq!(merged.asset_size, 22345678);
-        assert!(merged.asset_sha256.is_some());
-        assert!(merged.can_download_from_mirror_chyan);
-        assert!(merged.can_download_from_github);
-        assert!(merged.github_asset_url.is_some());
-        assert!(merged.mirror_chyan_asset_url.is_some());
-    }
-
-    #[test]
-    fn mirror_chyan_request_error_message_does_not_include_sensitive_url() {
-        let error = Client::new()
-            .get("http://127.0.0.1:0/latest?cdk=secret-token")
-            .send()
-            .expect_err("invalid URL should fail before network I/O");
-
-        let message = mirror_chyan_request_error_message(&error);
-
-        assert!(!message.contains("secret-token"));
-        assert!(!message.contains("cdk="));
-        assert!(!message.contains("127.0.0.1"));
-    }
-
-    #[test]
     fn manual_run_updates_last_auto_check_timestamp() {
         let paths = test_paths("check-manual-updates-last-auto-check-at");
         let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
-        let service = UpdateCheckService::with_providers_and_platform(
-            MirrorChyanProvider::offline(),
+        let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::with_manifest_path(github_manifest),
             test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
         );
@@ -1483,8 +722,7 @@ mod tests {
     #[test]
     fn run_rejects_unknown_install_kind() {
         let paths = test_paths("check-run-unknown-platform");
-        let service = UpdateCheckService::with_providers_and_platform(
-            MirrorChyanProvider::offline(),
+        let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::offline(),
             test_platform(Os::Macos, Arch::Aarch64, InstallKind::Unknown),
         );
@@ -1508,8 +746,7 @@ mod tests {
     #[test]
     fn run_rejects_windows_portable_install_kind() {
         let paths = test_paths("check-run-portable-platform");
-        let service = UpdateCheckService::with_providers_and_platform(
-            MirrorChyanProvider::offline(),
+        let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::offline(),
             test_platform(Os::Windows, Arch::X86_64, InstallKind::WindowsPortable),
         );
@@ -1547,11 +784,9 @@ mod tests {
         previous.asset_sha256 =
             Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into());
         previous.asset_size = Some(42);
-        previous.source = Some(DownloadSourceUsed::Github);
         state::save(&paths, &previous).expect("seed available state");
 
-        let service = UpdateCheckService::with_providers_and_platform(
-            MirrorChyanProvider::offline(),
+        let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::offline(),
             test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
         );

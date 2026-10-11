@@ -18,13 +18,6 @@ pub fn with_detail(
     error
 }
 
-pub fn secure_store_unavailable(error: impl std::fmt::Display) -> AppError {
-    app_error(
-        "updateSecureStoreUnavailable",
-        format!("系统安全存储不可用：{error}"),
-    )
-}
-
 pub fn invalid_version(input: &str, error: impl std::fmt::Display) -> AppError {
     let trimmed = input.trim();
     let app_error = with_detail(
@@ -97,44 +90,5 @@ pub fn store_managed_manual_only() -> AppError {
     app_error(
         "updateStoreManagedManualOnly",
         "此版本由 Microsoft Store 管理更新，请在 Microsoft Store 中获取更新",
-    )
-}
-
-pub fn mirror_chyan_api_error(message: impl Into<String>) -> AppError {
-    app_error(
-        "updateMirrorChyanApi",
-        format!("Mirror酱 API 请求失败：{}", message.into()),
-    )
-}
-
-pub fn mirror_chyan_cdk_error(code: i32, message: impl Into<String>) -> AppError {
-    let error_code = match code {
-        7001 => "updateMirrorChyanCdkExpired",
-        7002 => "updateMirrorChyanCdkInvalid",
-        7003 => "updateMirrorChyanCdkQuotaExhausted",
-        7004 => "updateMirrorChyanCdkMismatched",
-        7005 => "updateMirrorChyanCdkBlocked",
-        _ => "updateMirrorChyanCdk",
-    };
-    with_detail(
-        app_error(error_code, message.into()),
-        "mirrorChyanCode",
-        code.to_string(),
-    )
-}
-
-pub fn mirror_chyan_resource_error(code: i32, message: impl Into<String>) -> AppError {
-    let error_code = match code {
-        1001 => "updateMirrorChyanInvalidParams",
-        8001 => "updateMirrorChyanResourceNotFound",
-        8002 => "updateMirrorChyanInvalidOs",
-        8003 => "updateMirrorChyanInvalidArch",
-        8004 => "updateMirrorChyanInvalidChannel",
-        _ => "updateMirrorChyanBusiness",
-    };
-    with_detail(
-        app_error(error_code, message.into()),
-        "mirrorChyanCode",
-        code.to_string(),
     )
 }

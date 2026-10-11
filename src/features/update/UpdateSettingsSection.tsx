@@ -26,7 +26,6 @@ import {
 } from "./presentation";
 import { getUpdateErrorCode, getUpdateErrorMessage } from "./updateErrors";
 import type {
-  DownloadSourceUsed,
   UpdateChannel,
   UpdateDownloadProgress,
   UpdateErrorPayload,
@@ -265,7 +264,6 @@ export function UpdateSettingsSection({
   const isInstalling = status?.status === "installing";
   const controlsDisabled = busyAction !== null || isDownloading;
   const canCancel = isDownloading && busyAction !== "cancel";
-  const currentSource = downloadProgress?.source ?? status?.source ?? null;
   const totalBytes = downloadProgress?.totalBytes ?? status?.assetSize ?? null;
   const downloadedBytes =
     downloadProgress?.downloadedBytes ??
@@ -359,7 +357,7 @@ export function UpdateSettingsSection({
     setBusyAction("download");
     setNotice(null);
     try {
-      const result = await downloadUpdate(status?.source ?? undefined);
+      const result = await downloadUpdate();
       setNotice({
         tone: "success",
         text: t("settings.update.downloaded", {
@@ -512,7 +510,6 @@ export function UpdateSettingsSection({
           {renderDownloadCard({
             t,
             status,
-            source: currentSource,
             totalBytes,
             downloadedBytes,
             percent,
@@ -600,7 +597,6 @@ export function UpdateSettingsSection({
 interface DownloadCardProps {
   t: ReturnType<typeof useTranslation>["t"];
   status: UpdateState | null;
-  source: DownloadSourceUsed | null;
   totalBytes: number | null;
   downloadedBytes: number | null;
   percent: number | null;
@@ -618,7 +614,6 @@ interface DownloadCardProps {
 function renderDownloadCard({
   t,
   status,
-  source,
   totalBytes,
   downloadedBytes,
   percent,
@@ -640,7 +635,6 @@ function renderDownloadCard({
     return null;
   }
 
-  const sourceLabel = getSourceLabel(source, t);
   const progressWidth = `${Math.max(0, Math.min(percent ?? 0, 100))}%`;
 
   return (
@@ -657,11 +651,6 @@ function renderDownloadCard({
             <p className="text-[10px] font-mono text-ink-ghost break-all">{status.assetName}</p>
           ) : null}
         </div>
-        {sourceLabel ? (
-          <span className="shrink-0 rounded-full border border-paper-deep/30 px-2 py-0.5 text-[10px] font-mono text-ink-ghost">
-            {sourceLabel}
-          </span>
-        ) : null}
       </div>
 
       {status?.status === "downloading" || status?.status === "downloaded" ? (
@@ -798,19 +787,6 @@ function UpdateToggleRow({ label, checked, disabled = false, onChange }: UpdateT
   );
 }
 
-function getSourceLabel(
-  source: DownloadSourceUsed | null | undefined,
-  t: ReturnType<typeof useTranslation>["t"],
-) {
-  if (source === "mirrorChyan") {
-    return t("settings.update.source.mirrorChyan", { defaultValue: "MirrorChyan" });
-  }
-  if (source === "github") {
-    return t("settings.update.source.github", { defaultValue: "GitHub" });
-  }
-  return null;
-}
-
 export function deriveDownloadProgressState(
   current: UpdateState | null,
   progress: UpdateDownloadProgress,
@@ -823,7 +799,6 @@ export function deriveDownloadProgressState(
       latestVersion: progress.version,
       assetName: progress.assetName,
       assetSize: progress.totalBytes ?? current.assetSize ?? null,
-      source: progress.source,
       assetPath: null,
       downloadedAt: null,
       lastError: null,
@@ -839,7 +814,6 @@ export function deriveDownloadProgressState(
     assetPath: null,
     assetSha256: null,
     assetSize: progress.totalBytes ?? null,
-    source: progress.source,
     checkedAt: null,
     downloadedAt: null,
     lastError: null,
