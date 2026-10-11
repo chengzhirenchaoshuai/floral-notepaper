@@ -1,11 +1,10 @@
 import fs from "node:fs";
 
 const args = process.argv.slice(2);
-const disableMacosSigning = args.includes("--disable-macos-signing");
 const versionArg = args.find((arg) => !arg.startsWith("--"));
 
 if (!versionArg) {
-  console.error("Usage: node scripts/set-version.mjs <version> [--disable-macos-signing]");
+  console.error("Usage: node scripts/set-version.mjs <version>");
   process.exit(1);
 }
 
@@ -25,11 +24,6 @@ fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 
 const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, "utf8"));
 tauriConfig.version = version;
-if (disableMacosSigning) {
-  tauriConfig.bundle = tauriConfig.bundle ?? {};
-  tauriConfig.bundle.macOS = tauriConfig.bundle.macOS ?? {};
-  tauriConfig.bundle.macOS.signingIdentity = null;
-}
 fs.writeFileSync(tauriConfigPath, `${JSON.stringify(tauriConfig, null, 2)}\n`);
 
 const cargoToml = fs.readFileSync(cargoTomlPath, "utf8");
