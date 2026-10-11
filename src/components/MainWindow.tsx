@@ -29,12 +29,15 @@ import type { UpdateInstallPrepareRequest } from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { MainTitleBar } from "./main/MainTitleBar";
 import { NoteSidebar } from "./main/NoteSidebar";
+import { EditorToolbar } from "./main/EditorToolbar";
+import { FormatToolbar } from "./main/FormatToolbar";
+import { NoteHeader, type SaveState } from "./main/NoteHeader";
+import { EditorStatusBar } from "./main/EditorStatusBar";
 import { NoteContextMenu } from "./main/NoteContextMenu";
 import { CategoryContextMenu } from "./main/CategoryContextMenu";
 import { useAboutUpdateReminder } from "../features/update/useAboutUpdateReminder";
 import { useDragResize } from "./main/useDragResize";
 import { useEditorPreviewScrollSync } from "../features/markdown/useEditorPreviewScrollSync";
-import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
   createNote,
   createCategory,
@@ -54,7 +57,7 @@ import {
 import { cleanUnusedImages, pickLocalImages, saveImageFromPath } from "../features/images/api";
 import { useImagePaste, insertTextAtCursor } from "../features/images/useImagePaste";
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
-import { applyFormat, runEditorCommand, type FormatAction } from "../features/editor/formatting";
+import { applyFormat, runEditorCommand } from "../features/editor/formatting";
 import { useLoadEpoch } from "../features/notes/useLoadEpoch";
 import type { ExternalFile, Note, NoteMetadata } from "../features/notes/types";
 import {
@@ -81,7 +84,6 @@ import {
   syncPinnedTileIds,
 } from "../features/windows/tileWindowEvents";
 
-type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 type SidePanelMode = "about" | "settings";
 
 // 侧面板只在用户主动打开时挂载，懒加载可把关于面板（贡献者数据、更新设置）
@@ -103,10 +105,6 @@ interface CategoryMenuState {
   x: number;
   y: number;
   category: string;
-}
-
-export function pinTileButtonTitle(isPinned: boolean): string {
-  return isPinned ? "取消钉屏" : "钉到屏幕";
 }
 
 interface MainWindowProps {
@@ -149,7 +147,6 @@ export function MainWindow({
   const [savedDataDir, setSavedDataDir] = useState<string | null>(initialConfig?.dataDir ?? null);
   const [noteTransitionKey, setNoteTransitionKey] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [deleteExiting, setDeleteExiting] = useState(false);
   const [pinnedTileIds, setPinnedTileIds] = useState<Set<string>>(new Set());
   const [categories, setCategories] = useState<string[]>([]);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -221,100 +218,6 @@ export function MainWindow({
     [noteMenu?.noteId, notes],
   );
   const noteContextMenuItems = useMemo(() => getNoteContextMenuItems(t), [t]);
-  const saveStateLabel = useMemo<Record<SaveState, string>>(
-    () => ({
-      idle: t("main.statusBar.saveState.idle", { defaultValue: "未选择" }),
-      dirty: t("main.statusBar.saveState.dirty", { defaultValue: "未保存" }),
-      saving: t("main.statusBar.saveState.saving", { defaultValue: "保存中" }),
-      saved: t("main.statusBar.saveState.saved", { defaultValue: "已保存" }),
-      error: t("main.statusBar.saveState.error", { defaultValue: "保存失败" }),
-    }),
-    [t],
-  );
-  const toolbarButtons = useMemo<
-    { label: string; title: string; style: string; action: FormatAction }[]
-  >(
-    () => [
-      {
-        label: "B",
-        title: t("main.toolbar.bold", { defaultValue: "粗体" }),
-        style: "font-bold",
-        action: "bold",
-      },
-      {
-        label: "I",
-        title: t("main.toolbar.italic", { defaultValue: "斜体" }),
-        style: "italic",
-        action: "italic",
-      },
-      {
-        label: "H",
-        title: t("main.toolbar.heading", { defaultValue: "标题" }),
-        style: "font-bold",
-        action: "heading",
-      },
-      {
-        label: "—",
-        title: t("main.toolbar.hr", { defaultValue: "分割线" }),
-        style: "",
-        action: "hr",
-      },
-      {
-        label: "•",
-        title: t("main.toolbar.ul", { defaultValue: "无序列表" }),
-        style: "",
-        action: "ul",
-      },
-      {
-        label: "1.",
-        title: t("main.toolbar.ol", { defaultValue: "有序列表" }),
-        style: "font-mono text-[9px]",
-        action: "ol",
-      },
-      {
-        label: "<>",
-        title: t("main.toolbar.code", { defaultValue: "代码" }),
-        style: "font-mono text-[9px]",
-        action: "code",
-      },
-      {
-        label: "❝",
-        title: t("main.toolbar.quote", { defaultValue: "引用" }),
-        style: "",
-        action: "quote",
-      },
-      {
-        label: "∑",
-        title: t("main.toolbar.inlineMath", { defaultValue: "行内公式" }),
-        style: "font-mono text-[11px]",
-        action: "inlineMath",
-      },
-      {
-        label: "∫",
-        title: t("main.toolbar.blockMath", { defaultValue: "块级公式" }),
-        style: "font-mono text-[11px]",
-        action: "blockMath",
-      },
-    ],
-    [t],
-  );
-  const viewModeOptions = useMemo(
-    () => [
-      {
-        value: "edit" as ViewMode,
-        label: t("settings.defaultView.edit", { defaultValue: "编辑" }),
-      },
-      {
-        value: "split" as ViewMode,
-        label: t("settings.defaultView.split", { defaultValue: "分栏" }),
-      },
-      {
-        value: "preview" as ViewMode,
-        label: t("settings.defaultView.preview", { defaultValue: "预览" }),
-      },
-    ],
-    [t],
-  );
   const visibleSidePanel: SidePanelMode | null = aboutOpen
     ? "about"
     : settingsOpen && settingsConfig
@@ -1442,238 +1345,45 @@ export function MainWindow({
           )}
 
           <div className="flex-1 flex flex-col min-w-0">
-            <div className="flex items-center justify-between px-4 h-10 border-b border-paper-deep/20 shrink-0 bg-paper/20">
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-                  title={
-                    sidebarCollapsed
-                      ? t("main.window.expandSidebar", { defaultValue: "展开侧栏" })
-                      : t("main.window.collapseSidebar", { defaultValue: "收起侧栏" })
-                  }
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <line x1="9" y1="3" x2="9" y2="21" />
-                  </svg>
-                </button>
+            <EditorToolbar
+              sidebarCollapsed={sidebarCollapsed}
+              onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+              hasNote={Boolean(selectedId)}
+              tilePinned={selectedTilePinned}
+              onTogglePin={() => void handlePinEntry()}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              saveDisabled={!selectedId || saveState === "saving"}
+              onSave={() => void saveCurrentNote(true)}
+              deleteConfirm={deleteConfirm}
+              onDeleteConfirmChange={setDeleteConfirm}
+              onDelete={() => void handleDeleteNote()}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+            />
 
-                <div className="h-4 w-px bg-paper-deep/30 mx-1" />
-
-                <button
-                  onClick={() => void handlePinEntry()}
-                  disabled={!selectedId}
-                  aria-label={pinTileButtonTitle(selectedTilePinned)}
-                  className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                    selectedTilePinned
-                      ? "text-bamboo bg-bamboo-mist/40 hover:text-red-400 hover:bg-danger-bg"
-                      : "text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50"
-                  }`}
-                  title={pinTileButtonTitle(selectedTilePinned)}
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 17v5" />
-                    <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z" />
-                  </svg>
-                </button>
-
-                <button
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={handleUndo}
-                  disabled={!selectedId}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={t("main.editor.undo", { defaultValue: "撤销（Ctrl+Z）" })}
-                  aria-label={t("main.editor.undoLabel", { defaultValue: "撤销" })}
-                >
-                  <svg
-                    data-testid="main-editor-undo-icon"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M9 14 4 9l5-5" />
-                    <path d="M4 9h10a6 6 0 0 1 0 12h-1" />
-                  </svg>
-                </button>
-
-                <button
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={handleRedo}
-                  disabled={!selectedId}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={t("main.editor.redo", { defaultValue: "重做（Ctrl+Y）" })}
-                  aria-label={t("main.editor.redoLabel", { defaultValue: "重做" })}
-                >
-                  <svg
-                    data-testid="main-editor-redo-icon"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                    style={{ transform: "scaleX(-1)" }}
-                  >
-                    <path d="M9 14 4 9l5-5" />
-                    <path d="M4 9h10a6 6 0 0 1 0 12h-1" />
-                  </svg>
-                </button>
-
-                <button
-                  onClick={() => void saveCurrentNote(true)}
-                  disabled={!selectedId || saveState === "saving"}
-                  className="px-2.5 h-7 flex items-center justify-center rounded-lg text-[11px] text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={t("common.save", { defaultValue: "保存" })}
-                >
-                  {t("common.save", { defaultValue: "保存" })}
-                </button>
-
-                {deleteConfirm ? (
-                  <div
-                    className={`flex items-center gap-1 ml-1 ${deleteExiting ? "animate-delete-confirm-exit" : "animate-delete-confirm"}`}
-                  >
-                    <span className="text-[11px] text-red-400 whitespace-nowrap">
-                      {t("main.editor.confirmDelete", { defaultValue: "确认删除？" })}
-                    </span>
-                    <button
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setDeleteExiting(true);
-                        setTimeout(() => {
-                          setDeleteExiting(false);
-                          setDeleteConfirm(false);
-                          void handleDeleteNote();
-                        }, 150);
-                      }}
-                      className="px-2 h-6 rounded-md text-[11px] text-cloud bg-red-400 hover:bg-red-500 transition-colors cursor-pointer whitespace-nowrap outline-none"
-                    >
-                      {t("common.delete", { defaultValue: "删除" })}
-                    </button>
-                    <button
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setDeleteExiting(true);
-                        setTimeout(() => {
-                          setDeleteExiting(false);
-                          setDeleteConfirm(false);
-                        }, 150);
-                      }}
-                      className="px-2 h-6 rounded-md text-[11px] text-ink-faint hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer outline-none"
-                    >
-                      {t("common.cancel", { defaultValue: "取消" })}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setDeleteConfirm(true)}
-                    disabled={!selectedId}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-red-400 hover:bg-danger-bg transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    title={t("noteMenu.delete", { defaultValue: "删除笔记" })}
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="3,6 5,6 21,6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-
-              <SlidingButtonGroup
-                options={viewModeOptions}
-                value={viewMode}
-                onChange={setViewMode}
-                buttonClassName="px-3 py-1"
-              />
-            </div>
-
-            <div
-              key={noteTransitionKey}
-              className="animate-note-enter px-6 pt-4 pb-2 shrink-0 border-b border-paper-deep/15"
-            >
-              <input
-                type="text"
-                value={title}
-                onChange={(event) => {
-                  setTitle(event.target.value);
-                  markDirty();
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    contentRef.current?.focus();
-                  }
-                }}
-                placeholder={t("common.untitledNote", { defaultValue: "无标题笔记" })}
-                disabled={!selectedId}
-                className="w-full text-[20px] font-display font-bold text-ink placeholder:text-ink-ghost/50 tracking-wide disabled:opacity-60"
-              />
-              <div className="flex items-center gap-3 mt-1.5">
-                <span className="text-[10px] text-ink-ghost font-mono tabular-nums truncate max-w-[200px]">
-                  {selectedExternalFile
-                    ? t("main.externalFile.label", {
-                        path: selectedExternalFile.filePath,
-                        defaultValue: "外部文件 · {{path}}",
-                      })
-                    : selectedNote
-                      ? `${formatShortDate(selectedNote.updatedAt)} ${formatTime(selectedNote.updatedAt)}`
-                      : "--"}
-                </span>
-                <span className="text-[10px] text-ink-ghost/40">·</span>
-                <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {t("common.wordCount", { count: charCount, defaultValue: "{{count}} 字" })}
-                </span>
-                <span className="text-[10px] text-ink-ghost/40">·</span>
-                <span
-                  key={saveState}
-                  className={`text-[10px] font-mono tabular-nums animate-status-fade ${
-                    saveState === "error"
-                      ? "text-red-400"
-                      : saveState === "dirty"
-                        ? "text-amber-500/70"
-                        : "text-bamboo/60"
-                  }`}
-                >
-                  {saveStateLabel[saveState]}
-                </span>
-              </div>
-            </div>
+            <NoteHeader
+              transitionKey={noteTransitionKey}
+              title={title}
+              onTitleChange={(value) => {
+                setTitle(value);
+                markDirty();
+              }}
+              onSubmit={() => contentRef.current?.focus()}
+              disabled={!selectedId}
+              metaText={
+                selectedExternalFile
+                  ? t("main.externalFile.label", {
+                      path: selectedExternalFile.filePath,
+                      defaultValue: "外部文件 · {{path}}",
+                    })
+                  : selectedNote
+                    ? `${formatShortDate(selectedNote.updatedAt)} ${formatTime(selectedNote.updatedAt)}`
+                    : "--"
+              }
+              charCount={charCount}
+              saveState={saveState}
+            />
 
             <div
               key={viewMode}
@@ -1691,51 +1401,14 @@ export function MainWindow({
                       className="flex flex-col min-h-0 shrink-0"
                       style={{ width: viewMode === "split" ? `${splitRatio * 100}%` : "100%" }}
                     >
-                      <div className="flex items-center gap-0.5 px-4 pt-2 pb-1 shrink-0">
-                        {toolbarButtons.map((button) => (
-                          <button
-                            key={button.label}
-                            title={button.title}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                              if (contentRef.current) {
-                                applyFormat(
-                                  contentRef.current,
-                                  button.action,
-                                  t,
-                                  setContent,
-                                  markDirty,
-                                );
-                              }
-                            }}
-                            className={`w-6 h-6 flex items-center justify-center rounded text-[11px] text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer ${button.style}`}
-                          >
-                            {button.label}
-                          </button>
-                        ))}
-                        <span className="w-px h-4 mx-1 bg-paper-deep/50" aria-hidden="true" />
-                        <button
-                          title={t("main.toolbar.insertImage", { defaultValue: "插入本地图片" })}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => void handleInsertLocalImage()}
-                          className="w-6 h-6 flex items-center justify-center rounded text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-                        >
-                          <svg
-                            width="13"
-                            height="13"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <path d="M21 15l-5-5L5 21" />
-                          </svg>
-                        </button>
-                      </div>
+                      <FormatToolbar
+                        onFormat={(action) => {
+                          if (contentRef.current) {
+                            applyFormat(contentRef.current, action, t, setContent, markDirty);
+                          }
+                        }}
+                        onInsertImage={() => void handleInsertLocalImage()}
+                      />
 
                       <div className="flex-1 overflow-hidden px-5 pb-4">
                         <textarea
@@ -1815,41 +1488,12 @@ export function MainWindow({
               )}
             </div>
 
-            <div className="flex items-center justify-between px-4 h-7 border-t border-paper-deep/20 bg-paper/30 shrink-0">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {t("main.statusBar.lineNumber", {
-                    count: lineCount,
-                    defaultValue: "Ln {{count}}",
-                  })}
-                </span>
-                <span className="text-[10px] text-ink-ghost/40">|</span>
-                <span className="text-[10px] text-ink-ghost font-mono">
-                  {t("main.statusBar.format", { defaultValue: "Markdown + LaTeX" })}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                {selectedId && !isExternal && content.includes("images/") && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => void handleCleanUnusedImages()}
-                      className="text-[10px] text-ink-ghost hover:text-bamboo font-mono cursor-pointer transition-colors"
-                    >
-                      {t("main.images.cleanUnused", { defaultValue: "清理未使用图片" })}
-                    </button>
-                    <span className="text-[10px] text-ink-ghost/40">|</span>
-                  </>
-                )}
-                <span className="text-[10px] text-ink-ghost font-mono">
-                  {t("main.statusBar.encoding", { defaultValue: "UTF-8" })}
-                </span>
-                <span className="text-[10px] text-ink-ghost/40">|</span>
-                <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {t("main.statusBar.byteSize", { size: byteSize, defaultValue: "{{size}} KB" })}
-                </span>
-              </div>
-            </div>
+            <EditorStatusBar
+              lineCount={lineCount}
+              byteSize={byteSize}
+              showCleanImages={Boolean(selectedId) && !isExternal && content.includes("images/")}
+              onCleanImages={() => void handleCleanUnusedImages()}
+            />
           </div>
           {settingsConfig && settingsOpen && settingsOverlay && (
             <div className="absolute inset-0 z-20" onClick={handleCloseSettings} />
