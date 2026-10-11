@@ -568,6 +568,7 @@ enum ShortcutAction {
 #[derive(Default)]
 struct NotepadPool {
     available: Mutex<Vec<String>>,
+    replenish_pending: AtomicBool,
 }
 
 impl NotepadPool {
@@ -590,6 +591,14 @@ impl NotepadPool {
             .lock()
             .map(|a| a.len() < NOTEPAD_POOL_CAPACITY)
             .unwrap_or(false)
+    }
+
+    fn try_begin_replenish(&self) -> bool {
+        !self.replenish_pending.swap(true, Ordering::SeqCst)
+    }
+
+    fn finish_replenish(&self) {
+        self.replenish_pending.store(false, Ordering::SeqCst);
     }
 }
 
@@ -1592,13 +1601,20 @@ fn schedule_main_window_show_fallback(app: &AppHandle) {
 }
 
 fn schedule_notepad_prewarm(app: &AppHandle) {
-    for i in 0..NOTEPAD_POOL_CAPACITY {
-        let delay = 800 + i as u64 * 400;
-        schedule_notepad_replenish(app, delay);
-    }
+    schedule_notepad_replenish(app, 800);
 }
 
 fn schedule_notepad_replenish(app: &AppHandle, delay_ms: u64) {
+    let Some(pool) = app.try_state::<NotepadPool>() else {
+        return;
+    };
+    if !pool.is_below_capacity() {
+        return;
+    }
+    if !pool.try_begin_replenish() {
+        return;
+    }
+
     let handle = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(delay_ms));
@@ -1606,6 +1622,9 @@ fn schedule_notepad_replenish(app: &AppHandle, delay_ms: u64) {
         let _ = handle.run_on_main_thread(move || {
             if let Err(error) = prewarm_notepad(&handle_inner) {
                 eprintln!("failed to replenish notepad pool: {error}");
+            }
+            if let Some(pool) = handle_inner.try_state::<NotepadPool>() {
+                pool.finish_replenish();
             }
         });
     });
@@ -1648,7 +1667,10 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     // 预热窗口在池中等待期间保持低内存档位，激活时恢复 Normal
     set_webview_memory_usage_level(&window, true);
 
-    pool.put(label);
+    // 构建期间池可能已被其他预热填满，或入池失败：关闭多余的待机窗口，避免隐藏 WebView 泄漏
+    if !pool.is_below_capacity() || !pool.put(label) {
+        let _ = window.close();
+    }
 
     Ok(())
 }
