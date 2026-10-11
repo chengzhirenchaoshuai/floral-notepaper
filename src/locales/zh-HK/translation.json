@@ -7,6 +7,8 @@
     "license": "許可證",
     "productName": "花箋",
     "summary": "輕量、優雅、現代化的本地便箋工具",
+    "selfBuild": "自用版",
+    "basedOn": "基於 Achilng/floral-notepaper 修改",
     "tipPrefix": "您知道嗎：",
     "title": "關於",
     "version": "版本：v{{version}}"

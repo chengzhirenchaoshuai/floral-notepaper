@@ -7,6 +7,8 @@
     "license": "License",
     "productName": "花笺",
     "summary": "A lightweight, elegant, modern local note-taking tool",
+    "selfBuild": "Personal Build",
+    "basedOn": "Modified from Achilng/floral-notepaper",
     "tipPrefix": "Tip:",
     "title": "About",
     "version": "Version: v{{version}}"

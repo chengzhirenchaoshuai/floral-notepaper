@@ -84,7 +84,13 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
         <section className="space-y-1.5">
           <h3 className="text-[20px] font-serif font-medium text-ink-soft">
             {t("about.productName", { defaultValue: "花笺" })}
+            <span className="ml-1.5 text-[11px] font-body text-ink-ghost">
+              {t("about.selfBuild", { defaultValue: "自用版" })}
+            </span>
           </h3>
+          <p className="text-[11px] text-ink-ghost font-body">
+            {t("about.basedOn", { defaultValue: "基于 Achilng/floral-notepaper 修改" })}
+          </p>
           <p className="text-[11px] text-ink-ghost font-body">
             {t("about.summary", { defaultValue: "轻量、优雅、现代化的本地便签工具" })}
           </p>
@@ -106,7 +112,9 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
           <section className="space-y-1 py-2 border-y border-paper-deep/25">
             <button
               type="button"
-              onClick={() => void openUrl("https://github.com/Achilng/floral-notepaper")}
+              onClick={() =>
+                void openUrl("https://github.com/chengzhirenchaoshuai/floral-notepaper")
+              }
               className="w-full h-8 px-1 flex items-center justify-between text-[11px] text-ink-faint hover:text-bamboo cursor-pointer transition-colors"
             >
               <span className="inline-flex items-center gap-1.5">
@@ -140,7 +148,9 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
             </button>
             <button
               type="button"
-              onClick={() => void openUrl("https://github.com/Achilng/floral-notepaper/issues")}
+              onClick={() =>
+                void openUrl("https://github.com/chengzhirenchaoshuai/floral-notepaper/issues")
+              }
               className="w-full h-8 px-1 flex items-center justify-between text-[11px] text-ink-faint hover:text-bamboo cursor-pointer transition-colors"
             >
               <span className="inline-flex items-center gap-1.5">
@@ -175,7 +185,9 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
             <button
               type="button"
               onClick={() =>
-                void openUrl("https://github.com/Achilng/floral-notepaper/blob/main/LICENSE")
+                void openUrl(
+                  "https://github.com/chengzhirenchaoshuai/floral-notepaper/blob/main/LICENSE",
+                )
               }
               className="w-full h-8 px-1 flex items-center justify-between text-[11px] text-ink-faint hover:text-bamboo cursor-pointer transition-colors"
             >
