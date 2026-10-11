@@ -46,6 +46,8 @@ import type {
   UpdateState,
 } from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
+import { ExternalFileListItem } from "./main/ExternalFileListItem";
+import { NoteListItem } from "./main/NoteListItem";
 import { POPUP_VIEWPORT_MARGIN, useViewportPopupPosition } from "./popupPosition";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
@@ -75,7 +77,6 @@ import {
   filterNotes,
   formatShortDate,
   formatTime,
-  getDisplayTitle,
   groupNotesByCategory,
   metadataFromNote,
 } from "../features/notes/noteUtils";
@@ -2130,83 +2131,17 @@ export function MainWindow({
                       <div className="px-3 py-1.5 text-[10px] text-ink-ghost/50 font-mono tracking-wider uppercase">
                         {t("main.externalFiles.title", { defaultValue: "外部文件" })}
                       </div>
-                      {externalFiles.map((file) => {
-                        const isSelected = file.id === selectedId;
-                        const isHovered = file.id === hoveredId;
-
-                        return (
-                          <button
-                            key={file.id}
-                            onClick={() => void handleSelectExternalFile(file.id)}
-                            onMouseEnter={() => setHoveredId(file.id)}
-                            onMouseLeave={() => setHoveredId(null)}
-                            className={`w-full text-left rounded-xl px-3 py-2.5 transition-all duration-[600ms] cursor-pointer group relative ${
-                              isSelected
-                                ? "bg-bamboo-mist/70"
-                                : isHovered
-                                  ? "bg-paper-warm/70"
-                                  : "bg-transparent"
-                            }`}
-                          >
-                            <div
-                              className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                                isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                              }`}
-                            />
-
-                            <div className="flex items-baseline justify-between mb-0.5">
-                              <span
-                                className={`text-[13px] font-display font-medium truncate pr-2 transition-colors flex items-center gap-1.5 ${
-                                  isSelected ? "text-bamboo" : "text-ink-soft"
-                                }`}
-                              >
-                                <svg
-                                  width="12"
-                                  height="12"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className="shrink-0 opacity-60"
-                                >
-                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                  <polyline points="14 2 14 8 20 8" />
-                                </svg>
-                                {file.title}
-                              </span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRemoveExternalFile(file.id);
-                                }}
-                                className="opacity-0 group-hover:opacity-100 text-ink-ghost hover:text-red-400 transition-all p-0.5"
-                                title={t("main.externalFiles.remove", {
-                                  defaultValue: "从列表移除",
-                                })}
-                              >
-                                <svg
-                                  width="12"
-                                  height="12"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                >
-                                  <line x1="18" y1="6" x2="6" y2="18" />
-                                  <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg>
-                              </button>
-                            </div>
-
-                            <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors pl-[18px]">
-                              {file.filePath}
-                            </p>
-                          </button>
-                        );
-                      })}
+                      {externalFiles.map((file) => (
+                        <ExternalFileListItem
+                          key={file.id}
+                          file={file}
+                          isSelected={file.id === selectedId}
+                          isHovered={file.id === hoveredId}
+                          onSelect={(id) => void handleSelectExternalFile(id)}
+                          onRemove={handleRemoveExternalFile}
+                          onHoverChange={setHoveredId}
+                        />
+                      ))}
                     </>
                   )}
 
@@ -2235,65 +2170,18 @@ export function MainWindow({
                             if (noteId) void handleMoveNote(noteId, "");
                           }}
                         >
-                          {group.notes.map((note) => {
-                            const isSelected = note.id === selectedId;
-                            const isHovered = note.id === hoveredId;
-                            return (
-                              <div
-                                key={note.id}
-                                draggable
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData("text/plain", note.id);
-                                  e.dataTransfer.effectAllowed = "move";
-                                }}
-                                onClick={() => void handleSelectNote(note.id)}
-                                onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
-                                onMouseEnter={() => setHoveredId(note.id)}
-                                onMouseLeave={() => setHoveredId(null)}
-                                className={`w-full text-left rounded-xl px-3 py-2.5 transition-all duration-[600ms] cursor-pointer group relative ${
-                                  isSelected
-                                    ? "bg-bamboo-mist/70"
-                                    : isHovered
-                                      ? "bg-paper-warm/70"
-                                      : "bg-transparent"
-                                }`}
-                              >
-                                <div
-                                  className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                                    isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                                  }`}
-                                />
-                                <div className="flex items-baseline justify-between mb-0.5">
-                                  <span
-                                    className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
-                                      isSelected ? "text-bamboo" : "text-ink-soft"
-                                    }`}
-                                  >
-                                    {getDisplayTitle(note, t)}
-                                  </span>
-                                  <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
-                                    {formatShortDate(note.updatedAt)}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                                  {note.preview ||
-                                    t("common.blankNote", { defaultValue: "空白笔记" })}
-                                </p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                    {formatTime(note.updatedAt)}
-                                  </span>
-                                  <span className="text-[10px] text-ink-ghost/40">·</span>
-                                  <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                    {t("common.wordCount", {
-                                      count: note.wordCount,
-                                      defaultValue: "{{count}} 字",
-                                    })}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {group.notes.map((note) => (
+                            <NoteListItem
+                              key={note.id}
+                              note={note}
+                              isSelected={note.id === selectedId}
+                              isHovered={note.id === hoveredId}
+                              inCategory={false}
+                              onSelect={(id) => void handleSelectNote(id)}
+                              onContextMenu={handleOpenNoteMenu}
+                              onHoverChange={setHoveredId}
+                            />
+                          ))}
                         </div>
                       );
                     }
@@ -2411,70 +2299,18 @@ export function MainWindow({
                                 {t("main.category.emptyFolder", { defaultValue: "空文件夹" })}
                               </div>
                             ) : (
-                              group.notes.map((note) => {
-                                const isSelected = note.id === selectedId;
-                                const isHovered = note.id === hoveredId;
-
-                                return (
-                                  <div
-                                    key={note.id}
-                                    draggable
-                                    onDragStart={(e) => {
-                                      e.dataTransfer.setData("text/plain", note.id);
-                                      e.dataTransfer.effectAllowed = "move";
-                                    }}
-                                    onClick={() => void handleSelectNote(note.id)}
-                                    onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
-                                    onMouseEnter={() => setHoveredId(note.id)}
-                                    onMouseLeave={() => setHoveredId(null)}
-                                    className={`w-full text-left rounded-lg mx-1 px-2.5 py-2 transition-all duration-[600ms] cursor-pointer group relative ${
-                                      isSelected
-                                        ? "bg-bamboo-mist/70"
-                                        : isHovered
-                                          ? "bg-paper-warm/70"
-                                          : "bg-transparent"
-                                    }`}
-                                    style={{ width: "calc(100% - 8px)" }}
-                                  >
-                                    <div
-                                      className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                                        isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                                      }`}
-                                    />
-
-                                    <div className="flex items-baseline justify-between mb-0.5">
-                                      <span
-                                        className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
-                                          isSelected ? "text-bamboo" : "text-ink-soft"
-                                        }`}
-                                      >
-                                        {getDisplayTitle(note, t)}
-                                      </span>
-                                      <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
-                                        {formatShortDate(note.updatedAt)}
-                                      </span>
-                                    </div>
-
-                                    <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                                      {note.preview ||
-                                        t("common.blankNote", { defaultValue: "空白笔记" })}
-                                    </p>
-
-                                    <div className="flex items-center gap-2 mt-1">
-                                      <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                        {formatTime(note.updatedAt)}
-                                      </span>
-                                      <span className="text-[10px] text-ink-ghost/40">·</span>
-                                      <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                        {t("common.wordCount", {
-                                          count: note.wordCount,
-                                          defaultValue: "{{count}} 字",
-                                        })}
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })
+                              group.notes.map((note) => (
+                                <NoteListItem
+                                  key={note.id}
+                                  note={note}
+                                  isSelected={note.id === selectedId}
+                                  isHovered={note.id === hoveredId}
+                                  inCategory={true}
+                                  onSelect={(id) => void handleSelectNote(id)}
+                                  onContextMenu={handleOpenNoteMenu}
+                                  onHoverChange={setHoveredId}
+                                />
+                              ))
                             )}
                           </div>
                         </div>
