@@ -1,4 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"];
+
+// 弹出系统文件选择器，让用户从本地磁盘选取一张或多张图片
+export async function pickLocalImages(): Promise<string[]> {
+  const result = await open({
+    multiple: true,
+    directory: false,
+    filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }],
+  });
+
+  if (!result) return [];
+  return Array.isArray(result) ? result : [result];
+}
 
 export function saveImage(noteId: string, data: Uint8Array, extension: string): Promise<string> {
   // 图片字节流作为 raw payload 直传（元数据走 headers），避免把二进制

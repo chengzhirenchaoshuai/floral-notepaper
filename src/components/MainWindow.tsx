@@ -65,7 +65,7 @@ import {
   saveExternalFile,
   updateNote,
 } from "../features/notes/api";
-import { cleanUnusedImages, saveImageFromPath } from "../features/images/api";
+import { cleanUnusedImages, pickLocalImages, saveImageFromPath } from "../features/images/api";
 import { useImagePaste, insertTextAtCursor } from "../features/images/useImagePaste";
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
 import type { ExternalFile, Note, NoteMetadata } from "../features/notes/types";
@@ -1680,6 +1680,27 @@ export function MainWindow({
     }
   };
 
+  const handleInsertLocalImage = async () => {
+    if (isExternal) return;
+    try {
+      const paths = await pickLocalImages();
+      if (paths.length === 0) return;
+
+      const noteId = await ensureNoteSaved();
+      if (!noteId) return;
+
+      const textarea = contentRef.current;
+      if (!textarea) return;
+
+      const rels = await Promise.all(paths.map((p) => saveImageFromPath(noteId, p)));
+      const markdown = rels.map((rel) => `![](${rel})`).join("\n");
+      insertTextAtCursor(textarea, setContent, markdown);
+      markDirty();
+    } catch (error) {
+      showToast(getErrorMessage(error));
+    }
+  };
+
   const handleUndo = () => {
     if (!selectedId) return;
     const textarea = contentRef.current;
@@ -2996,6 +3017,28 @@ export function MainWindow({
                             {button.label}
                           </button>
                         ))}
+                        <span className="w-px h-4 mx-1 bg-paper-deep/50" aria-hidden="true" />
+                        <button
+                          title={t("main.toolbar.insertImage", { defaultValue: "插入本地图片" })}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => void handleInsertLocalImage()}
+                          className="w-6 h-6 flex items-center justify-center rounded text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
+                        >
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <path d="M21 15l-5-5L5 21" />
+                          </svg>
+                        </button>
                       </div>
 
                       <div className="flex-1 overflow-hidden px-5 pb-4">

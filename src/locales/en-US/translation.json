@@ -145,6 +145,7 @@
       "heading": "Heading",
       "hr": "Horizontal rule",
       "inlineMath": "Inline math",
+      "insertImage": "Insert local image",
       "italic": "Italic",
       "ol": "Ordered list",
       "quote": "Blockquote",
