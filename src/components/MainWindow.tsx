@@ -1,13 +1,4 @@
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  Suspense,
-  lazy,
-} from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
@@ -29,6 +20,7 @@ import type { UpdateInstallPrepareRequest } from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { MainTitleBar } from "./main/MainTitleBar";
 import { NoteSidebar } from "./main/NoteSidebar";
+import { SidePanelHost, type SidePanelMode } from "./main/SidePanelHost";
 import { useContextMenuState } from "./main/useContextMenuState";
 import { EditorToolbar } from "./main/EditorToolbar";
 import { FormatToolbar } from "./main/FormatToolbar";
@@ -85,17 +77,6 @@ import {
   syncPinnedTileIds,
 } from "../features/windows/tileWindowEvents";
 
-type SidePanelMode = "about" | "settings";
-
-// 侧面板只在用户主动打开时挂载，懒加载可把关于面板（贡献者数据、更新设置）
-// 和设置面板从首屏 bundle 中拆出
-const AboutPanel = lazy(() =>
-  import("./AboutPanel").then((module) => ({ default: module.AboutPanel })),
-);
-const SettingsPanel = lazy(() =>
-  import("./SettingsPanel").then((module) => ({ default: module.SettingsPanel })),
-);
-
 interface MainWindowProps {
   initialSettingsOpen?: boolean;
   initialConfig?: AppConfig;
@@ -123,12 +104,6 @@ export function MainWindow({
   const [isLoading, setIsLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [mountedSidePanel, setMountedSidePanel] = useState<SidePanelMode | null>(
-    initialSettingsOpen && initialConfig ? "settings" : null,
-  );
-  const [sidePanelContentVisible, setSidePanelContentVisible] = useState(
-    Boolean(initialSettingsOpen && initialConfig),
-  );
   const { aboutUpdateReminder, dismissReminderText } = useAboutUpdateReminder();
   const {
     noteMenu,
@@ -155,9 +130,6 @@ export function MainWindow({
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameCategoryValue, setRenameCategoryValue] = useState("");
-  const [settingsOverlay, setSettingsOverlay] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 1080 : true,
-  );
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [splitRatio, setSplitRatio] = useState(0.5);
@@ -220,7 +192,6 @@ export function MainWindow({
     : settingsOpen && settingsConfig
       ? "settings"
       : null;
-  const sidePanelExpanded = visibleSidePanel !== null;
 
   const filteredNotes = useMemo(() => filterNotes(notes, searchQuery), [notes, searchQuery]);
 
@@ -410,28 +381,6 @@ export function MainWindow({
   }, [applyNote, clearCurrentNote]);
 
   useEffect(() => {
-    if (visibleSidePanel) {
-      setMountedSidePanel(visibleSidePanel);
-      setSidePanelContentVisible(false);
-
-      const frame = window.requestAnimationFrame(() => {
-        setSidePanelContentVisible(true);
-      });
-
-      return () => window.cancelAnimationFrame(frame);
-    }
-
-    setSidePanelContentVisible(false);
-    if (!mountedSidePanel) return;
-
-    const timer = window.setTimeout(() => {
-      setMountedSidePanel((current) => (current === mountedSidePanel ? null : current));
-    }, 320);
-
-    return () => window.clearTimeout(timer);
-  }, [mountedSidePanel, visibleSidePanel]);
-
-  useEffect(() => {
     const unlisten = listen("notes-changed", () => {
       // 记录事件到达时的 epoch；其间用户一旦切换/加载了笔记，本次同步即过期，
       // 不再用过期的列表快照去改选中或回填内容，避免把选中"拉回"刚保存的旧笔记
@@ -483,12 +432,6 @@ export function MainWindow({
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [refreshNotes]);
-
-  useEffect(() => {
-    const onResize = () => setSettingsOverlay(window.innerWidth < 1080);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
 
   useEffect(() => {
     const unlisten = listen<string>("open-external-file", (event) => {
@@ -1429,54 +1372,16 @@ export function MainWindow({
               onCleanImages={() => void handleCleanUnusedImages()}
             />
           </div>
-          {settingsConfig && settingsOpen && settingsOverlay && (
-            <div className="absolute inset-0 z-20" onClick={handleCloseSettings} />
-          )}
-          <div
-            className={`relative shrink-0 overflow-hidden h-full transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-              sidePanelExpanded || mountedSidePanel ? "border-l border-paper-deep/20" : "border-l-0"
-            } ${
-              settingsOverlay
-                ? `absolute right-0 top-0 bottom-0 z-30 ${visibleSidePanel ? "w-[360px] shadow-xl" : "w-0"}`
-                : `${sidePanelExpanded ? "w-[360px]" : "w-0"}`
-            }`}
-          >
-            <div
-              className={`absolute inset-0 w-[360px] h-full transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                mountedSidePanel === "about"
-                  ? sidePanelContentVisible && visibleSidePanel === "about"
-                    ? "translate-x-0 opacity-100"
-                    : "pointer-events-none translate-x-4 opacity-0"
-                  : "pointer-events-none translate-x-4 opacity-0"
-              }`}
-            >
-              {mountedSidePanel === "about" ? (
-                <Suspense fallback={null}>
-                  <AboutPanel onClose={handleCloseAbout} />
-                </Suspense>
-              ) : null}
-            </div>
-            <div
-              className={`absolute inset-0 w-[360px] h-full transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                mountedSidePanel === "settings"
-                  ? sidePanelContentVisible && visibleSidePanel === "settings"
-                    ? "translate-x-0 opacity-100"
-                    : "pointer-events-none translate-x-4 opacity-0"
-                  : "pointer-events-none translate-x-4 opacity-0"
-              }`}
-            >
-              {mountedSidePanel === "settings" && settingsConfig ? (
-                <Suspense fallback={null}>
-                  <SettingsPanel
-                    config={settingsConfig}
-                    onChange={handleSettingsChange}
-                    onMigrateDataDir={() => void handleMigrateDataDir()}
-                    onClose={handleCloseSettings}
-                  />
-                </Suspense>
-              ) : null}
-            </div>
-          </div>
+          <SidePanelHost
+            visiblePanel={visibleSidePanel}
+            initialPanel={initialSettingsOpen && initialConfig ? "settings" : null}
+            settingsRequested={Boolean(settingsConfig && settingsOpen)}
+            settingsConfig={settingsConfig}
+            onCloseAbout={handleCloseAbout}
+            onCloseSettings={handleCloseSettings}
+            onSettingsChange={handleSettingsChange}
+            onMigrateDataDir={() => void handleMigrateDataDir()}
+          />
         </div>
       </div>
       {noteMenu && noteMenuTarget && (
