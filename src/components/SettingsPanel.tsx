@@ -22,7 +22,6 @@ import {
 import { useShortcutRecorder } from "../features/settings/useShortcutRecorder";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
-import { LOCALE_OPTIONS } from "../locales/locale-whitelist";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 
 const HARMONY_FONT_LICENSE_URL = new URL("../assets/fonts/LICENSE_Fonts", import.meta.url).href;
@@ -116,14 +115,6 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
         label: t("settings.defaultView.preview", { defaultValue: "预览" }),
       },
     ],
-    [t],
-  );
-  const localeOptions = useMemo(
-    () =>
-      LOCALE_OPTIONS.map(({ value, labelKey, defaultLabel }) => ({
-        value,
-        label: t(labelKey, { defaultValue: defaultLabel }),
-      })),
     [t],
   );
 
@@ -232,17 +223,6 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
               {t("settings.selectFolder", { defaultValue: "选择文件夹" })}
             </button>
           </div>
-        </section>
-
-        <section className="space-y-2">
-          <label className="block text-[11px] font-body text-ink-faint">
-            {t("settings.locale.label", { defaultValue: "语言" })}
-          </label>
-          <SlidingButtonGroup
-            options={localeOptions}
-            value={config.locale}
-            onChange={(value) => setConfigValue("locale", value)}
-          />
         </section>
 
         <section className="space-y-2">

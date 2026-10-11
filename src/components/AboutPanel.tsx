@@ -20,7 +20,7 @@ interface AboutPanelProps {
 }
 
 export function AboutPanel({ onClose }: AboutPanelProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [version, setVersion] = useState("");
 
   useEffect(() => {
@@ -28,10 +28,10 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
   }, []);
 
   const tipSegments = useMemo(() => {
-    const tips = getTips(i18n.language);
+    const tips = getTips();
     const raw = tips[Math.floor(Math.random() * tips.length)] ?? "";
     return parseTip(raw);
-  }, [i18n.language]);
+  }, []);
 
   const tipContainerRef = useRef<HTMLDivElement>(null);
   const tipInnerRef = useRef<HTMLSpanElement>(null);

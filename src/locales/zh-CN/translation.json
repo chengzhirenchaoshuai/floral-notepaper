@@ -234,12 +234,6 @@
       "editor": "编辑器字号",
       "surface": "小窗/磁贴字号"
     },
-    "locale": {
-      "enUS": "English",
-      "label": "语言",
-      "zhCN": "简体中文",
-      "zhHK": "繁體中文"
-    },
     "dataDir": "数据目录",
     "openAtCursor": "快捷键打开时跟随鼠标位置",
     "quickNoteShortcut": "快捷记录快捷键",

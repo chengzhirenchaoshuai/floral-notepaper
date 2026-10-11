@@ -11,8 +11,6 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    #[serde(default = "default_locale")]
-    pub locale: String,
     // 读入时可缺省（旧 config 无此字段），但返回前端前必在 load_config / save_config
     // 中被设为 Some。不加 skip_serializing_if：保证 dataDir 字段始终序列化输出，
     // 与前端 `dataDir: string` 契约一致，避免 None 时省略字段导致前端收到 undefined
@@ -1110,7 +1108,6 @@ impl NoteStore {
 
     fn default_config(&self) -> AppConfig {
         AppConfig {
-            locale: default_locale(),
             data_dir: Some(self.data_dir.to_string_lossy().to_string()),
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
@@ -1691,10 +1688,6 @@ fn default_open_at_cursor() -> bool {
     true
 }
 
-fn default_locale() -> String {
-    "zh-CN".into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1826,14 +1819,12 @@ mod tests {
         assert!(!default_config.tile_save_returns_to_pin);
         assert!(default_config.notepad_always_on_top);
         assert_eq!(default_config.theme, "system");
-        assert_eq!(default_config.locale, "zh-CN");
         assert_eq!(
             default_config.data_dir.as_deref(),
             Some(store.data_dir().to_string_lossy().as_ref())
         );
 
         let mut saved = AppConfig {
-            locale: "en-US".into(),
             data_dir: None,
             global_shortcut: "Alt+Space".into(),
             close_to_tray: false,
@@ -1936,7 +1927,6 @@ mod tests {
         assert!(!loaded.tile_double_click_to_edit);
         assert!(!loaded.tile_save_returns_to_pin);
         assert_eq!(loaded.theme, "system");
-        assert_eq!(loaded.locale, "zh-CN");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
     }

@@ -23,7 +23,6 @@ function applyInterfaceSettings(
   document.documentElement.style.setProperty("--interface-background-color", backgroundColor);
 }
 import { getInitialRoute } from "./features/windows/windowRoutes";
-import { syncLanguage } from "./locales";
 import { listen } from "@tauri-apps/api/event";
 
 function App() {
@@ -40,7 +39,6 @@ function App() {
       String(config.tabIndentSize ?? 2),
     );
     applyInterfaceSettings(config);
-    void syncLanguage(config.locale);
   }, []);
 
   useEffect(() => {

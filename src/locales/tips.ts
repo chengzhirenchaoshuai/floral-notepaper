@@ -1,15 +1,7 @@
-import zhCN from "./zh-CN/tips.json";
-import enUS from "./en-US/tips.json";
-import zhHK from "./zh-HK/tips.json";
+import tips from "./zh-CN/tips.json";
 
-const tipsMap: Record<string, string[]> = {
-  "zh-CN": zhCN,
-  "en-US": enUS,
-  "zh-HK": zhHK,
-};
-
-export function getTips(language: string): string[] {
-  return tipsMap[language] ?? tipsMap["zh-CN"];
+export function getTips(): string[] {
+  return tips;
 }
 
 export interface TipSegment {

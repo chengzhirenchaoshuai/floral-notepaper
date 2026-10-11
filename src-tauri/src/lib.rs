@@ -4,15 +4,13 @@ pub mod locales;
 pub mod services;
 pub mod updater;
 
-use locales::Locale;
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
 use std::{env, fs, io::Write, path::PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 
 #[tauri::command]
-fn app_name() -> Result<String, AppError> {
-    let locale = Locale::from_tag(&default_store()?.load_config()?.locale);
-    Ok(locales::app_name(locale).to_string())
+fn app_name() -> String {
+    locales::APP_NAME.to_string()
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 use crate::{
-    locales::{self, Locale},
+    locales,
     services::notes::{default_store, AppConfig, AppError},
 };
 use serde::{Deserialize, Serialize};
@@ -668,50 +668,39 @@ pub fn tray_menu_action(id: &str) -> Option<TrayMenuAction> {
     }
 }
 
-pub fn tray_menu_specs(locale: Locale, close_to_tray: bool, autostart: bool) -> Vec<TrayMenuSpec> {
+pub fn tray_menu_specs(close_to_tray: bool, autostart: bool) -> Vec<TrayMenuSpec> {
     vec![
         TrayMenuSpec {
             id: TRAY_SHOW_MAIN_ID,
-            label: locales::tray_show_main_label(locale),
+            label: locales::TRAY_SHOW_MAIN_LABEL,
             checked: None,
         },
         TrayMenuSpec {
             id: TRAY_QUICK_NOTE_ID,
-            label: locales::tray_quick_note_label(locale),
+            label: locales::TRAY_QUICK_NOTE_LABEL,
             checked: None,
         },
         TrayMenuSpec {
             id: TRAY_TOGGLE_CLOSE_TO_TRAY_ID,
-            label: locales::tray_toggle_close_to_tray_label(locale),
+            label: locales::TRAY_TOGGLE_CLOSE_TO_TRAY_LABEL,
             checked: Some(close_to_tray),
         },
         TrayMenuSpec {
             id: TRAY_TOGGLE_AUTOSTART_ID,
-            label: locales::tray_toggle_autostart_label(locale),
+            label: locales::TRAY_TOGGLE_AUTOSTART_LABEL,
             checked: Some(autostart),
         },
         TrayMenuSpec {
             id: TRAY_QUIT_ID,
-            label: locales::tray_quit_label(locale),
+            label: locales::TRAY_QUIT_LABEL,
             checked: None,
         },
     ]
 }
 
-fn locale_from_config(config: &AppConfig) -> Locale {
-    Locale::from_tag(&config.locale)
-}
-
-fn configured_locale() -> Locale {
-    load_config()
-        .map(|config| locale_from_config(&config))
-        .unwrap_or_default()
-}
-
 fn build_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<Menu<Wry>, Box<dyn Error>> {
-    let locale = locale_from_config(config);
     let autostart = autostart_enabled(app, config.autostart);
-    let specs = tray_menu_specs(locale, config.close_to_tray, autostart);
+    let specs = tray_menu_specs(config.close_to_tray, autostart);
 
     let show_main = MenuItem::with_id(app, specs[0].id, specs[0].label, true, None::<&str>)?;
     let quick_note = MenuItem::with_id(app, specs[1].id, specs[1].label, true, None::<&str>)?;
@@ -754,30 +743,11 @@ fn refresh_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn 
 
     let menu = build_tray_menu(app, config)?;
     tray.set_menu(Some(menu))?;
-    tray.set_tooltip(Some(locales::tray_tooltip(locale_from_config(config))))?;
-    Ok(())
-}
-
-fn refresh_window_titles(app: &AppHandle, config: &AppConfig) -> Result<(), AppError> {
-    let locale = locale_from_config(config);
-
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        window.set_title(locales::main_window_title(locale))?;
-    }
-
-    for (label, window) in app.webview_windows() {
-        if label.starts_with("notepad-") {
-            window.set_title(locales::notepad_window_title(locale))?;
-        } else if label.starts_with("tile-") {
-            window.set_title(locales::tile_window_title(locale))?;
-        }
-    }
-
+    tray.set_tooltip(Some(locales::TRAY_TOOLTIP))?;
     Ok(())
 }
 
 pub fn refresh_shell_state(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
-    refresh_window_titles(app, config)?;
     refresh_tray_menu(app, config)?;
     Ok(())
 }
@@ -1165,7 +1135,6 @@ fn main_window_close_action(app_is_exiting: bool, close_to_tray: bool) -> MainWi
 fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
     let config = load_config()?;
     let menu = build_tray_menu(app.handle(), &config)?;
-    let locale = locale_from_config(&config);
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(
@@ -1173,7 +1142,7 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
                 .expect("missing default window icon")
                 .clone(),
         )
-        .tooltip(locales::tray_tooltip(locale))
+        .tooltip(locales::TRAY_TOOLTIP)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -1238,11 +1207,10 @@ fn toggle_close_to_tray(_app: &AppHandle) -> Result<AppConfig, Box<dyn Error>> {
 
 pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     clear_hidden_window_state(app);
-    let locale = configured_locale();
     let saved_bounds = saved_main_window_bounds();
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        window.set_title(locales::main_window_title(locale))?;
+        window.set_title(locales::MAIN_WINDOW_TITLE)?;
         apply_window_bounds(&window, saved_bounds)?;
         window.unminimize()?;
         window.show()?;
@@ -1255,7 +1223,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
         MAIN_WINDOW_LABEL,
         WindowOpenOptions {
             url: "index.html".to_string(),
-            title: locales::main_window_title(locale).to_string(),
+            title: locales::MAIN_WINDOW_TITLE.to_string(),
             specs: WindowSizeSpec {
                 width: 1180.0,
                 height: 760.0,
@@ -1288,8 +1256,6 @@ fn open_notepad_window_now(
             return Ok(reused);
         }
     }
-
-    let locale = configured_locale();
     let label = notepad_window_label(note_id);
     let specs = saved_surface_specs(app);
     let url = match note_id {
@@ -1302,7 +1268,7 @@ fn open_notepad_window_now(
         &label,
         WindowOpenOptions {
             url,
-            title: locales::notepad_window_title(locale).to_string(),
+            title: locales::NOTEPAD_WINDOW_TITLE.to_string(),
             specs,
             decorations: false,
             always_on_top: notepad_always_on_top_enabled(),
@@ -1346,11 +1312,10 @@ fn activate_pooled_notepad(app: &AppHandle, bounds: Option<WindowBounds>) -> Opt
     let pool = app.try_state::<NotepadPool>()?;
     let label = pool.take()?;
     let window = app.get_webview_window(&label)?;
-    let locale = configured_locale();
 
     set_webview_memory_usage_level(&window, false);
     let specs = saved_surface_specs(app);
-    let _ = window.set_title(locales::notepad_window_title(locale));
+    let _ = window.set_title(locales::NOTEPAD_WINDOW_TITLE);
     let _ = window.set_size(tauri::LogicalSize::new(specs.width, specs.height));
     // 预热窗口按当时的配置创建，激活前重新应用置顶设置以防配置已变
     let _ = window.set_always_on_top(notepad_always_on_top_enabled());
@@ -1537,14 +1502,13 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     let label = notepad_window_label(None);
     let specs = notepad_window_specs();
     let visual_options = dynamic_window_visual_options(&label);
-    let locale = configured_locale();
 
     let window = WebviewWindowBuilder::new(
         app,
         &label,
         WebviewUrl::App("index.html?view=notepad&standby=1".into()),
     )
-    .title(locales::notepad_window_title(locale))
+    .title(locales::NOTEPAD_WINDOW_TITLE)
     .inner_size(specs.width, specs.height)
     .min_inner_size(specs.min_width, specs.min_height)
     .resizable(true)
@@ -1704,7 +1668,6 @@ fn open_tile_window_now(
     note_id: &str,
     bounds: Option<WindowBounds>,
 ) -> Result<String, AppError> {
-    let locale = configured_locale();
     let label = tile_window_label(note_id);
     let url = format!("index.html?view=tile&noteId={note_id}");
 
@@ -1715,7 +1678,7 @@ fn open_tile_window_now(
         &label,
         WindowOpenOptions {
             url,
-            title: locales::tile_window_title(locale).to_string(),
+            title: locales::TILE_WINDOW_TITLE.to_string(),
             specs,
             decorations: false,
             always_on_top: true,
@@ -2271,7 +2234,7 @@ mod tests {
 
     #[test]
     fn builds_tray_menu_specs_with_configured_checked_state() {
-        let specs = tray_menu_specs(Locale::ZhCn, true, false);
+        let specs = tray_menu_specs(true, false);
         let ids: Vec<_> = specs.iter().map(|spec| spec.id).collect();
 
         assert_eq!(
@@ -2382,7 +2345,6 @@ mod tests {
 
     fn test_app_config(global_shortcut: &str, toggle_visibility_shortcut: &str) -> AppConfig {
         AppConfig {
-            locale: "zh-CN".into(),
             data_dir: Some("D:\\notes".into()),
             global_shortcut: global_shortcut.into(),
             close_to_tray: true,
@@ -2473,7 +2435,6 @@ mod tests {
     #[test]
     fn detects_runtime_config_changes() {
         let previous = AppConfig {
-            locale: "zh-CN".into(),
             data_dir: Some("D:\\notes".into()),
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
@@ -2519,7 +2480,6 @@ mod tests {
             last_known_base_dir: None,
         };
         let next = AppConfig {
-            locale: "en-US".into(),
             data_dir: Some("D:\\other-notes".into()),
             global_shortcut: "Alt+Space".into(),
             close_to_tray: false,
