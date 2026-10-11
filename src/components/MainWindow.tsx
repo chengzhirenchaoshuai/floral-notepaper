@@ -11,7 +11,7 @@ import {
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
@@ -1388,7 +1388,6 @@ export function MainWindow({
   const handleSettingsChange = useCallback(
     (nextConfig: AppConfig) => {
       setSettingsConfig(nextConfig);
-      void emit("config-changed", nextConfig);
       persistSettings(nextConfig);
     },
     [persistSettings],

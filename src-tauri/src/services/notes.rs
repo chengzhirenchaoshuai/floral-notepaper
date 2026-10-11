@@ -46,6 +46,10 @@ pub struct AppConfig {
     pub theme: String,
     #[serde(default = "default_font_size")]
     pub font_size: u32,
+    #[serde(default)]
+    pub interface_font_family: String,
+    #[serde(default)]
+    pub background_color: String,
     #[serde(default = "default_surface_font_size")]
     pub surface_font_size: u32,
     #[serde(default = "default_tab_indent_size")]
@@ -70,6 +74,16 @@ pub struct AppConfig {
     pub remember_surface_size: bool,
     #[serde(default = "default_notepad_always_on_top")]
     pub notepad_always_on_top: bool,
+    #[serde(default = "default_remember_window_bounds")]
+    pub remember_window_bounds: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_x: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_y: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_height: Option<u32>,
     #[serde(default = "default_tile_ctrl_close")]
     pub tile_ctrl_close: bool,
     #[serde(default)]
@@ -1146,6 +1160,8 @@ impl NoteStore {
             tile_color_mode: default_tile_color_mode(),
             theme: default_theme(),
             font_size: default_font_size(),
+            interface_font_family: String::new(),
+            background_color: String::new(),
             surface_font_size: default_surface_font_size(),
             tab_indent_size: default_tab_indent_size(),
             external_file_auto_save: default_external_file_auto_save(),
@@ -1158,6 +1174,11 @@ impl NoteStore {
             background_position_y: default_background_position(),
             remember_surface_size: default_remember_surface_size(),
             notepad_always_on_top: default_notepad_always_on_top(),
+            remember_window_bounds: default_remember_window_bounds(),
+            window_x: None,
+            window_y: None,
+            window_width: None,
+            window_height: None,
             tile_ctrl_close: default_tile_ctrl_close(),
             tile_double_click_to_edit: false,
             tile_save_returns_to_pin: false,
@@ -1742,6 +1763,10 @@ fn default_notepad_always_on_top() -> bool {
     true
 }
 
+fn default_remember_window_bounds() -> bool {
+    true
+}
+
 fn default_tile_ctrl_close() -> bool {
     true
 }
@@ -1915,6 +1940,8 @@ mod tests {
             tile_color_mode: "custom".into(),
             theme: "dark".into(),
             font_size: 16,
+            interface_font_family: String::new(),
+            background_color: String::new(),
             surface_font_size: 16,
             tab_indent_size: 2,
             external_file_auto_save: true,
@@ -1927,6 +1954,11 @@ mod tests {
             background_position_y: 50.0,
             remember_surface_size: true,
             notepad_always_on_top: false,
+            remember_window_bounds: true,
+            window_x: None,
+            window_y: None,
+            window_width: None,
+            window_height: None,
             tile_ctrl_close: true,
             tile_double_click_to_edit: true,
             tile_save_returns_to_pin: true,
