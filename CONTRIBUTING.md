@@ -1,6 +1,6 @@
-# 贡献指南
+# 开发指南
 
-感谢你对花笺（Floral Notepaper）的关注！这份指南会帮助你了解如何参与项目开发。
+花笺自用版的本地开发、分支维护与同步上游说明。
 
 ## 开发环境配置
 
@@ -64,7 +64,7 @@ pwsh -File scripts/build-windows-local.ps1
 
 ## 代码风格与测试
 
-提交 PR 前，请确保本地通过以下检查。可以在每次 commit 前也跑一遍，避免 CI 挂掉后反复修：
+提交前建议在本地跑一遍以下检查：
 
 ```bash
 # 后端
@@ -79,27 +79,30 @@ npx oxlint                                  # 静态检查
 npx oxfmt --check                           # 格式检查
 ```
 
-## Pull Request 流程
+> 本机如设置了 `HTTP_PROXY`，`mirror_chyan_request_error_message_does_not_include_sensitive_url` 测试会因代理返回 502 而失败，临时取消代理再运行即可。
 
-1. **先搜索** [已有 PR](https://github.com/Achilng/floral-notepaper/pulls)，确认没有雷同的提交，避免重复劳动
-2. Fork 本仓库，从 `main` 分支创建你的功能/修复分支
-3. 开发完成后，确保本地检查全部通过
-4. 提交 PR 到 `main` 分支，**填写 PR 模板**中的各项内容
-5. CI 必须全部通过（构建 + lint + 测试）
+## 分支维护
 
-   > 注：CI 检出的是 PR 分支与 `main` 合并后的代码（`refs/pull/<编号>/merge`），而非你分支的原始提交。
+- `self/main`：自用版主线，所有改动最终合入这里
+- 较大的改动从 `self/main` 拉出 `feat/描述`、`fix/描述` 分支，完成后合回
+- 远程：`fork` 为本仓库（chengzhirenchaoshuai/floral-notepaper），`origin` 为上游（Achilng/floral-notepaper）
 
-6. 至少一位 maintainer **review 通过**后方可合并
-7. Maintainer 使用 **squash merge** 合入，合入后自动删除远程分支
+## 同步上游
 
-PR 标题同样遵循 Conventional Commits 格式，例如 `feat: 添加笔记标签功能`。
+```bash
+git fetch origin
+git switch self/main
+git merge origin/main
+```
 
-## 发布流程（维护者）
+常见冲突处理：
 
-正式版本的 Tag、跨平台构建、Windows SignPath 签名、安装验证和 Draft Release 操作，请参考 [Release 发布流程](Docs/RELEASE_WORKFLOW.md)。
+- 上游修改了自用版已删除的文件（macOS/Linux 配置、MSIX 脚本、原 CI 工作流等）：保持删除，`git rm <文件>`
+- `src-tauri/src/updater/check.rs` 中的 `DEFAULT_GITHUB_REPO` 与 `mirror_chyan_enabled`：保留自用版的值
+- 版本号：保留自用版的版本号，不要被上游覆盖
 
-## 问题反馈
+合并后跑一遍上面的检查再提交。
 
-- 报告 bug：[提交 Issue](https://github.com/Achilng/floral-notepaper/issues/new?template=bug.yml)
-- 功能请求：[提交 Issue](https://github.com/Achilng/floral-notepaper/issues/new?template=enhancement.yml)
-- 一般讨论：[GitHub Discussions](https://github.com/Achilng/floral-notepaper/discussions)
+## 发布
+
+见 [发布流程](Docs/RELEASE_WORKFLOW.md)。
