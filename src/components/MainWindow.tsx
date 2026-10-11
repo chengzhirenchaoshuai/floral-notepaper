@@ -30,10 +30,11 @@ import { BackgroundLayer } from "./BackgroundLayer";
 import { ExternalFileListItem } from "./main/ExternalFileListItem";
 import { MainTitleBar } from "./main/MainTitleBar";
 import { NoteListItem } from "./main/NoteListItem";
+import { NoteContextMenu } from "./main/NoteContextMenu";
+import { CategoryContextMenu } from "./main/CategoryContextMenu";
 import { useAboutUpdateReminder } from "../features/update/useAboutUpdateReminder";
 import { useDragResize } from "./main/useDragResize";
 import { useEditorPreviewScrollSync } from "../features/markdown/useEditorPreviewScrollSync";
-import { POPUP_VIEWPORT_MARGIN, useViewportPopupPosition } from "./popupPosition";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
   createNote,
@@ -173,12 +174,6 @@ export function MainWindow({
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
   const [categoryMenuHoverSuppressed, setCategoryMenuHoverSuppressed] = useState(false);
-  const { popupRef: noteMenuRef, popupPosition: noteMenuPosition } = useViewportPopupPosition(
-    noteMenu,
-    `${noteMenuMode}:${categories.length}`,
-  );
-  const { popupRef: categoryMenuRef, popupPosition: categoryMenuPosition } =
-    useViewportPopupPosition(categoryMenu, categoryMenuConfirmDelete);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const windowLabelRef = useRef("main");
   const externalFileMtimeRef = useRef<number>(0);
@@ -2236,134 +2231,36 @@ export function MainWindow({
         </div>
       </div>
       {noteMenu && noteMenuTarget && (
-        <div
-          ref={noteMenuRef}
-          className={`popup-menu fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-x-hidden overflow-y-auto select-none ${noteMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
-          style={{
-            left: noteMenuPosition?.x ?? noteMenu.x,
-            top: noteMenuPosition?.y ?? noteMenu.y,
-            maxWidth: `calc(100vw - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
-            maxHeight: `calc(100vh - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
-          }}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          {noteMenuMode === "main" ? (
-            <div key="main" className="animate-menu-slide-right">
-              {noteContextMenuItems.map((item, index) => (
-                <button
-                  key={item.action}
-                  onClick={() => handleNoteMenuAction(item.action)}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 text-[12px] font-body transition-colors cursor-pointer ${
-                    item.tone === "danger"
-                      ? "text-red-400 hover:bg-danger-bg hover:text-red-500"
-                      : "text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo"
-                  } ${index > 0 ? "border-t border-paper-deep/20" : ""}`}
-                >
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div key="move" className="animate-menu-slide-left">
-              <button
-                onClick={() => setNoteMenuMode("main")}
-                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-body text-ink-ghost hover:bg-paper-warm transition-colors cursor-pointer border-b border-paper-deep/20"
-              >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="15 18 9 12 15 6" />
-                </svg>
-                <span>{t("common.back", { defaultValue: "返回" })}</span>
-              </button>
-              <button
-                onClick={() => void handleMoveNote(noteMenuTarget.id, "")}
-                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
-              >
-                {t("main.category.uncategorized", { defaultValue: "未分类" })}
-              </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => void handleMoveNote(noteMenuTarget.id, cat)}
-                  className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <NoteContextMenu
+          anchor={noteMenu}
+          closing={noteMenuClosing}
+          mode={noteMenuMode}
+          items={noteContextMenuItems}
+          categories={categories}
+          onAction={handleNoteMenuAction}
+          onBack={() => setNoteMenuMode("main")}
+          onMoveTo={(category) => void handleMoveNote(noteMenuTarget.id, category)}
+        />
       )}
 
       {categoryMenu && (
-        <div
-          ref={categoryMenuRef}
-          className={`popup-menu fixed z-[9999] min-w-[140px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-x-hidden overflow-y-auto select-none ${categoryMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
-          data-hover-suppressed={categoryMenuHoverSuppressed ? "" : undefined}
-          style={{
-            left: categoryMenuPosition?.x ?? categoryMenu.x,
-            top: categoryMenuPosition?.y ?? categoryMenu.y,
-            maxWidth: `calc(100vw - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
-            maxHeight: `calc(100vh - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
+        <CategoryContextMenu
+          anchor={categoryMenu}
+          category={categoryMenu.category}
+          closing={categoryMenuClosing}
+          confirmDelete={categoryMenuConfirmDelete}
+          hoverSuppressed={categoryMenuHoverSuppressed}
+          onRename={() => {
+            setCategoryMenuClosing(true);
+            setRenamingCategory(categoryMenu.category);
+            setRenameCategoryValue(categoryMenu.category);
           }}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          {categoryMenuConfirmDelete ? (
-            <div key="category-confirm" className="animate-menu-slide-left">
-              <div className="px-3 py-1.5 text-[11px] font-body text-ink-faint border-b border-paper-deep/20">
-                {t("main.category.confirmDelete", {
-                  category: categoryMenu.category,
-                  defaultValue: "确认删除「{{category}}」？",
-                })}
-              </div>
-              <button
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  void handleDeleteCategory(categoryMenu.category);
-                  setCategoryMenuClosing(true);
-                }}
-                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer outline-none"
-              >
-                {t("main.category.confirmDeleteAction", { defaultValue: "确认删除" })}
-              </button>
-              <button
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => switchCategoryMenuPanel(false)}
-                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer outline-none"
-              >
-                {t("common.cancel", { defaultValue: "取消" })}
-              </button>
-            </div>
-          ) : (
-            <div key="category-main" className="animate-menu-slide-right">
-              <button
-                onClick={() => {
-                  setCategoryMenuClosing(true);
-                  setRenamingCategory(categoryMenu.category);
-                  setRenameCategoryValue(categoryMenu.category);
-                }}
-                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
-              >
-                {t("main.category.rename", { defaultValue: "重命名" })}
-              </button>
-              <button
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => switchCategoryMenuPanel(true)}
-                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer border-t border-paper-deep/20 outline-none"
-              >
-                {t("main.category.delete", { defaultValue: "删除分类" })}
-              </button>
-            </div>
-          )}
-        </div>
+          onDelete={() => {
+            void handleDeleteCategory(categoryMenu.category);
+            setCategoryMenuClosing(true);
+          }}
+          onSwitchPanel={switchCategoryMenuPanel}
+        />
       )}
     </div>
   );
