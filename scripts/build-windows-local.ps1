@@ -175,7 +175,7 @@ try {
     throw 'No NSIS installer was found.'
   }
 
-  $portableOutput = Join-Path $outputRoot "floral-notepaper_${Version}.exe"
+  $portableOutput = Join-Path $outputRoot "floral-notepaper_${Version}_x64-portable.exe"
   $installerOutput = Join-Path $outputRoot "floral-notepaper_${Version}_x64-setup.exe"
   Copy-Item -LiteralPath $binaryPath -Destination $portableOutput -Force
   Copy-Item -LiteralPath $installer.FullName -Destination $installerOutput -Force
