@@ -209,7 +209,7 @@ Windows 开发机可使用 PowerShell 7 一次构建 EXE、NSIS、MSIX 和 MSIXU
 pwsh -File scripts/build-windows-local.ps1
 ```
 
-默认同时构建 x64 与 AArch64，产物写入 `local-build/windows`。如只需构建 x64，并且已经安装过与 `package-lock.json` 一致的依赖，可以运行：
+默认同时构建 x64 与 AArch64，产物写入仓库根目录下的 `release`。如只需构建 x64，并且已经安装过与 `package-lock.json` 一致的依赖，可以运行：
 
 ```powershell
 pwsh -File scripts/build-windows-local.ps1 -Architectures x64 -SkipNpmInstall

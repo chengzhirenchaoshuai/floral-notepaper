@@ -15,7 +15,6 @@ obj/
 ## Build results
 [Dd]ebug/
 [Rr]elease/
-local-build/
 x64/
 x86/
 *.dmg

@@ -43,14 +43,14 @@
   pwsh -File scripts/build-windows-local.ps1 `
     -Architectures x64 `
     -SkipNpmInstall `
-    -OutputDir local-build/windows-x64
+    -OutputDir release/windows-x64
 
 #>
 [CmdletBinding()]
 param(
   [ValidateSet('x64', 'aarch64')][string[]]$Architectures = @('x64', 'aarch64'),
   [string]$Version = '',
-  [string]$OutputDir = 'local-build/windows',
+  [string]$OutputDir = 'release',
   [switch]$SkipNpmInstall,
   [switch]$SkipNsisToolchainPreparation,
   [switch]$Clean
