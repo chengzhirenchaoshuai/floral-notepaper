@@ -1,35 +1,15 @@
-## .NET / Visual Studio
-bin/
-obj/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-.vs/
-
-## NuGet
-*.nupkg
-**/[Pp]ackages/*
-!**/[Pp]ackages/build/
-
-## Build results
-[Dd]ebug/
-[Rr]elease/
-x64/
-x86/
-*.dmg
-*.app
-
-## Node / Tauri
+## 构建产物
 node_modules/
 dist/
+release/
 src-tauri/target/
 src-tauri/gen/
+*.log
 
-## Local hooks
+## 本地 hooks
 .husky/pre-push
 
-## agent文档
+## agent 文档
 *PLAN.md
 PLAN*.md
 PROGRESS.md
@@ -39,29 +19,27 @@ CLAUDE.md
 *ANALYSIS.md
 .claude
 
-src/assets/fonts/SourceHanSerifSC-Bold.woff2
-
 ## IDE
 .idea/
 .vscode/
+.vs/
 *.swp
 *~
 
-## OS
+## 系统文件
 Thumbs.db
 Desktop.ini
 .DS_Store
 
-## Design
+## 设计源文件
 *.psd
 *.ai
 *.icon
-src-tauri/icons/macOS
 
-## Generated
+## 生成文件
 src/generated/contributors.json
 
-## Temp
+## 临时文件
 temp/
 nul
 tsconfig.tsbuildinfo
