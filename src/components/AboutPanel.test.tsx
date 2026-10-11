@@ -33,7 +33,7 @@ describe("AboutPanel", () => {
     expect(markup).toContain("轻量、优雅、现代化的本地便签工具");
     expect(markup).toContain("更新");
     // Update status has not hydrated yet: the update section shows a loading
-    // placeholder instead of full update controls (avoids MSIX controls flash).
+    // placeholder instead of full update controls.
     expect(markup).toContain("正在读取更新设置");
     expect(markup).not.toContain("检查更新");
     expect(markup).not.toContain("自动检查更新");

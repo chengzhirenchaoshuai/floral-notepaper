@@ -60,9 +60,6 @@ pub fn update_settings_save(
     state: State<'_, UpdaterState>,
     settings: super::types::UpdateSettingsDto,
 ) -> Result<super::types::UpdateSettingsDto, AppError> {
-    if super::platform::current_platform().install_kind == super::types::InstallKind::WindowsMsix {
-        return Err(errors::store_managed_manual_only());
-    }
     state.save_settings(settings)
 }
 

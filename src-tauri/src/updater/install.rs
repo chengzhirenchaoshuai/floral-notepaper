@@ -393,7 +393,6 @@ fn resolve_install_target(platform: &PlatformInfo) -> Result<PathBuf, AppError> 
             .map(PathBuf::from)
             .ok_or_else(errors::unsupported_platform),
         super::types::InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
-        super::types::InstallKind::WindowsMsix => Err(errors::store_managed_manual_only()),
         super::types::InstallKind::Unknown => Err(errors::unsupported_platform()),
     }
 }
@@ -829,9 +828,7 @@ fn install_failure_action(code: &str) -> &'static str {
         | "updateInstallAssetSizeMismatch"
         | "updateInstallAssetHashMismatch"
         | "updateInstallAssetExtractFailed" => "retryDownload",
-        "updatePlatformUnsupported"
-        | "updatePortableManualOnly"
-        | "updateStoreManagedManualOnly" => "useSupportedInstall",
+        "updatePlatformUnsupported" | "updatePortableManualOnly" => "useSupportedInstall",
         _ => "retryInstall",
     }
 }
@@ -1254,12 +1251,5 @@ mod tests {
             b"dll dependency"
         );
         assert!(!staged_dir.join("notes.txt").exists());
-    }
-
-    #[test]
-    fn store_managed_error_maps_to_use_supported_install_action() {
-        let error = errors::store_managed_manual_only();
-
-        assert_eq!(install_failure_action(&error.code), "useSupportedInstall");
     }
 }

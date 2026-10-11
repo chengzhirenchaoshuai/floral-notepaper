@@ -594,9 +594,7 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
             Some("configureUpdateSource")
         }
         "updateProviderFixtureUnreadable" => Some("fixFixturePath"),
-        "updatePlatformUnsupported"
-        | "updatePortableManualOnly"
-        | "updateStoreManagedManualOnly" => Some("useSupportedInstall"),
+        "updatePlatformUnsupported" | "updatePortableManualOnly" => Some("useSupportedInstall"),
         _ => Some("retry"),
     }
 }
@@ -765,13 +763,6 @@ mod tests {
                 .and_then(|error| error.action.as_deref()),
             Some("useSupportedInstall")
         );
-    }
-
-    #[test]
-    fn store_managed_error_maps_to_use_supported_install_action() {
-        let error = errors::store_managed_manual_only();
-
-        assert_eq!(update_error_action(&error), Some("useSupportedInstall"));
     }
 
     #[test]

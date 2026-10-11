@@ -43,7 +43,6 @@ pub enum UpdateCheckStatus {
 pub enum InstallKind {
     WindowsNsis,
     WindowsPortable,
-    WindowsMsix,
     MacosAppBundle,
     Unknown,
 }

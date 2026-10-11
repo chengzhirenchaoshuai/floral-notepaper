@@ -14,12 +14,7 @@ export type UpdateStatus =
 
 export type UpdateCheckStatus = "notAvailable" | "available" | "failed";
 
-export type InstallKind =
-  | "windowsNsis"
-  | "windowsPortable"
-  | "windowsMsix"
-  | "macosAppBundle"
-  | "unknown";
+export type InstallKind = "windowsNsis" | "windowsPortable" | "macosAppBundle" | "unknown";
 
 export interface UpdateSettings {
   autoCheck: boolean;

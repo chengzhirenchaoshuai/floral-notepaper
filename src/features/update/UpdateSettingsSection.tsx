@@ -2,12 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import { openUrl } from "@tauri-apps/plugin-opener";
-
-// MSIX installs are updated by the Microsoft Store; the About panel links
-// there instead of exposing the in-app updater (mirror酱 sources included).
-export const MICROSOFT_STORE_PRODUCT_ID = "9NRCC0ZSG81R";
-export const MICROSOFT_STORE_PDP_URL = `ms-windows-store://pdp/?productid=${MICROSOFT_STORE_PRODUCT_ID}`;
 import { SlidingButtonGroup } from "../../components/SlidingButtonGroup";
 import {
   cancelUpdate,
@@ -34,10 +28,7 @@ import type {
   UpdateState,
 } from "./types";
 
-// Rust event payloads always carry installKind: null (the backend injects it
-// only when the install is MSIX and we hydrate it via getUpdateStatus).
-// Merging preserves the hydrated value so the MSIX store-managed gate below
-// never silently reopens after an event overwrites the status.
+// 后端事件负载中的 installKind 可能为 null，合并时保留已加载的安装形态。
 export function mergeStatusPayload(
   current: UpdateState | null,
   incoming: UpdateState,
@@ -120,9 +111,6 @@ export function UpdateSettingsSection({
         if (!alive) return;
         setStatus(loadedStatus);
         setNotice(getInitialUpdateStatusNotice(loadedStatus, t));
-        // MSIX installs are updated by the Microsoft Store; there are no
-        // in-app update settings to load for them.
-        if (loadedStatus.installKind === "windowsMsix") return;
         return getUpdateSettings().then((loadedSettings) => {
           if (!alive) return;
           latestChannelRef.current = loadedSettings.channel ?? loadedStatus.channel;
@@ -256,7 +244,6 @@ export function UpdateSettingsSection({
   }, []);
 
   const currentVersion = status?.currentVersion ?? "--";
-  const storeManaged = status?.installKind === "windowsMsix";
   const showCheckControls = mode !== "settingsOnly";
   const showSettingsControls = mode !== "checkOnly";
   const intervalValue: IntervalOption = String(settings?.checkIntervalHours ?? 24);
@@ -430,34 +417,7 @@ export function UpdateSettingsSection({
     }
   };
 
-  if (storeManaged) {
-    // MSIX installs are updated by the Microsoft Store; hide the update
-    // settings entirely and link the About panel to the Store product page.
-    if (mode === "settingsOnly") return null;
-    return (
-      <section className="space-y-3 pt-2 border-t border-paper-deep/25">
-        <p className="text-[11px] text-ink-ghost">
-          {t("settings.update.msixNoInAppUpdate", {
-            defaultValue:
-              "MSIX 侧载版本暂不支持应用内更新，请通过 GitHub 或 Microsoft Store 获取最新版本",
-          })}
-        </p>
-        <button
-          type="button"
-          onClick={() => void openUrl(MICROSOFT_STORE_PDP_URL)}
-          className="w-full h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer"
-        >
-          {t("settings.update.openInStore", {
-            defaultValue: "在 Microsoft Store 中查看更新",
-          })}
-        </button>
-      </section>
-    );
-  }
-
-  // Before the status has been hydrated the install kind is unknown, so
-  // rendering any update controls risks showing them for a moment and then
-  // replacing them with the Store link once the MSIX status arrives.
+  // 状态加载完成前只显示占位提示，避免控件闪现
   if (status === null) {
     const hydrationNotice = getUpdateStatusHydrationNotice(notice, t);
     return (

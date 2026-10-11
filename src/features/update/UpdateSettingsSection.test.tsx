@@ -3,7 +3,6 @@ import { describe, expect, test, vi } from "vitest";
 import {
   deriveDownloadProgressState,
   mergeStatusPayload,
-  MICROSOFT_STORE_PDP_URL,
   UpdateSettingsSection,
 } from "./UpdateSettingsSection";
 import type { UpdateSettings, UpdateState } from "./types";
@@ -173,64 +172,6 @@ describe("UpdateSettingsSection", () => {
 
     expect(markup).toContain("正在读取更新设置...");
     expect(markup).not.toContain("检查更新");
-    expect(markup).not.toContain("在 Microsoft Store 中查看更新");
-  });
-
-  test("links MSIX installs to the Microsoft Store instead of update controls", () => {
-    const msixStatus: UpdateState = {
-      ...status,
-      installKind: "windowsMsix",
-    };
-
-    const markup = renderToStaticMarkup(
-      <UpdateSettingsSection initialSettings={settings} initialStatus={msixStatus} mode="full" />,
-    );
-
-    expect(MICROSOFT_STORE_PDP_URL).toBe("ms-windows-store://pdp/?productid=9NRCC0ZSG81R");
-    expect(markup).toContain("在 Microsoft Store 中查看更新");
-    expect(markup).toContain("MSIX 侧载版本暂不支持应用内更新");
-    expect(markup).not.toContain("由 Microsoft Store 管理更新");
-    expect(markup).not.toContain("检查更新");
-    expect(markup).not.toContain("自动检查更新");
-    expect(markup).not.toContain("下载更新");
-    expect(markup).not.toContain("当前版本：");
-  });
-
-  test("renders only a Microsoft Store link for MSIX installs in the about panel", () => {
-    const msixStatus: UpdateState = {
-      ...status,
-      installKind: "windowsMsix",
-    };
-
-    const markup = renderToStaticMarkup(
-      <UpdateSettingsSection
-        initialSettings={settings}
-        initialStatus={msixStatus}
-        mode="checkOnly"
-      />,
-    );
-
-    expect(markup).toContain("在 Microsoft Store 中查看更新");
-    expect(markup).toContain("MSIX 侧载版本暂不支持应用内更新");
-    expect(markup).not.toContain("检查更新");
-    expect(markup).not.toContain("当前版本：");
-  });
-
-  test("hides the update settings entirely for MSIX installs", () => {
-    const msixStatus: UpdateState = {
-      ...status,
-      installKind: "windowsMsix",
-    };
-
-    const markup = renderToStaticMarkup(
-      <UpdateSettingsSection
-        initialSettings={settings}
-        initialStatus={msixStatus}
-        mode="settingsOnly"
-      />,
-    );
-
-    expect(markup).toBe("");
   });
 
   test("uses the latest channel when deriving optimistic download state without prior status", () => {
@@ -255,7 +196,7 @@ describe("UpdateSettingsSection", () => {
   test("keeps the hydrated installKind when an event payload omits it", () => {
     const current: UpdateState = {
       ...status,
-      installKind: "windowsMsix",
+      installKind: "windowsPortable",
     };
     const incoming: UpdateState = {
       ...status,
@@ -265,14 +206,14 @@ describe("UpdateSettingsSection", () => {
 
     const merged = mergeStatusPayload(current, incoming);
 
-    expect(merged.installKind).toBe("windowsMsix");
+    expect(merged.installKind).toBe("windowsPortable");
     expect(merged.latestVersion).toBe("1.0.6");
   });
 
   test("prefers the incoming installKind when the event payload provides one", () => {
     const current: UpdateState = {
       ...status,
-      installKind: "windowsMsix",
+      installKind: "windowsPortable",
     };
     const incoming: UpdateState = {
       ...status,
