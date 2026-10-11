@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
@@ -24,23 +24,13 @@ import {
 } from "../features/settings/api";
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
-import { getUpdateStatus, reportInstallPreparation } from "../features/update/api";
-import {
-  ABOUT_UPDATE_LABEL_DURATION_MS,
-  applyAboutUpdateStatus,
-  createAboutUpdateReminderState,
-  dismissAboutUpdateReminderText,
-  type AboutUpdateReminderState,
-} from "../features/update/presentation";
-import type {
-  UpdateErrorPayload,
-  UpdateInstallPrepareRequest,
-  UpdateState,
-} from "../features/update/types";
+import { reportInstallPreparation } from "../features/update/api";
+import type { UpdateInstallPrepareRequest } from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { ExternalFileListItem } from "./main/ExternalFileListItem";
 import { MainTitleBar } from "./main/MainTitleBar";
 import { NoteListItem } from "./main/NoteListItem";
+import { useAboutUpdateReminder } from "../features/update/useAboutUpdateReminder";
 import { useDragResize } from "./main/useDragResize";
 import { useEditorPreviewScrollSync } from "../features/markdown/useEditorPreviewScrollSync";
 import { POPUP_VIEWPORT_MARGIN, useViewportPopupPosition } from "./popupPosition";
@@ -155,9 +145,7 @@ export function MainWindow({
   const [sidePanelContentVisible, setSidePanelContentVisible] = useState(
     Boolean(initialSettingsOpen && initialConfig),
   );
-  const [aboutUpdateReminder, setAboutUpdateReminder] = useState<AboutUpdateReminderState>(() =>
-    createAboutUpdateReminderState(null),
-  );
+  const { aboutUpdateReminder, dismissReminderText } = useAboutUpdateReminder();
   const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(initialConfig ?? null);
   const [savedDataDir, setSavedDataDir] = useState<string | null>(initialConfig?.dataDir ?? null);
   const [noteTransitionKey, setNoteTransitionKey] = useState(0);
@@ -225,7 +213,6 @@ export function MainWindow({
     () => externalFiles.find((f) => f.id === selectedId) ?? null,
     [externalFiles, selectedId],
   );
-  const updateStatusHydratedRef = useRef(false);
 
   const isExternal = selectedExternalFile !== null;
   const isExternalRef = useRef(isExternal);
@@ -338,18 +325,6 @@ export function MainWindow({
     ],
     [t],
   );
-  const syncUpdateStatus = useCallback((nextStatus: UpdateState) => {
-    const shouldHydrate = !updateStatusHydratedRef.current;
-    if (shouldHydrate) {
-      updateStatusHydratedRef.current = true;
-    }
-
-    setAboutUpdateReminder((current) =>
-      shouldHydrate
-        ? createAboutUpdateReminderState(nextStatus)
-        : applyAboutUpdateStatus(current, nextStatus),
-    );
-  }, []);
   const visibleSidePanel: SidePanelMode | null = aboutOpen
     ? "about"
     : settingsOpen && settingsConfig
@@ -544,111 +519,6 @@ export function MainWindow({
     };
   }, [applyNote, clearCurrentNote]);
 
-  useEffect(() => {
-    let active = true;
-
-    void getUpdateStatus()
-      .then((status) => {
-        if (!active) return;
-        syncUpdateStatus(status);
-      })
-      .catch((error) => {
-        console.error("failed to load update status", error);
-      });
-
-    const bindEvents = async () => {
-      const unlistenFns: UnlistenFn[] = [];
-      const disposeAll = () => {
-        for (const unlisten of unlistenFns.splice(0)) {
-          unlisten();
-        }
-      };
-
-      try {
-        unlistenFns.push(
-          await listen<UpdateState>("update://checking", (event) => {
-            if (!active) return;
-            syncUpdateStatus(event.payload);
-          }),
-        );
-
-        unlistenFns.push(
-          await listen<UpdateState>("update://checked", (event) => {
-            if (!active) return;
-            syncUpdateStatus(event.payload);
-          }),
-        );
-
-        unlistenFns.push(
-          await listen<UpdateState>("update://download-finished", (event) => {
-            if (!active) return;
-            syncUpdateStatus(event.payload);
-          }),
-        );
-
-        unlistenFns.push(
-          await listen<UpdateState>("update://install-finished", (event) => {
-            if (!active) return;
-            syncUpdateStatus(event.payload);
-          }),
-        );
-
-        unlistenFns.push(
-          await listen("update://error", () => {
-            if (!active) return;
-            void getUpdateStatus()
-              .then((status) => {
-                if (!active) return;
-                syncUpdateStatus(status);
-              })
-              .catch((error) => {
-                console.error("failed to refresh update status after error event", error);
-              });
-          }),
-        );
-
-        unlistenFns.push(
-          await listen<UpdateErrorPayload>("update://auto-check-error", (event) => {
-            if (!active) return;
-            console.error("automatic update check failed", event.payload);
-            void getUpdateStatus()
-              .then((status) => {
-                if (!active) return;
-                syncUpdateStatus(status);
-              })
-              .catch((error) => {
-                console.error("failed to refresh update status after automatic check error", error);
-              });
-          }),
-        );
-
-        return disposeAll;
-      } catch (error) {
-        disposeAll();
-        console.error("failed to bind update event listeners", error);
-        return () => undefined;
-      }
-    };
-
-    const promise = bindEvents();
-
-    return () => {
-      active = false;
-      void promise
-        .then((dispose) => dispose())
-        .catch((error) => {
-          console.error("failed to dispose update event listeners", error);
-        });
-    };
-  }, [syncUpdateStatus]);
-
-  useEffect(() => {
-    if (!aboutUpdateReminder.showText) return;
-    const timer = window.setTimeout(() => {
-      setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
-    }, ABOUT_UPDATE_LABEL_DURATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [aboutUpdateReminder.showText]);
   useEffect(() => {
     if (visibleSidePanel) {
       setMountedSidePanel(visibleSidePanel);
@@ -1148,11 +1018,11 @@ export function MainWindow({
       const nextOpen = !open;
       if (nextOpen) {
         setSettingsOpen(false);
-        setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
+        dismissReminderText();
       }
       return nextOpen;
     });
-  }, []);
+  }, [dismissReminderText]);
 
   const handleCloseAbout = useCallback(() => {
     setAboutOpen(false);
