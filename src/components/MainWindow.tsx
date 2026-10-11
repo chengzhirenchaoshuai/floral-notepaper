@@ -16,14 +16,6 @@ import { exportMarkdownNote, importMarkdownNote } from "../features/importExport
 import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
 import { showToast } from "./Toast";
 import {
-  createScrollSyncMap,
-  interpolateScrollOffset,
-  measureBlockOffsets,
-  measurePreviewBlockOffsets,
-  tagPreviewBlocks,
-  type ScrollSyncMap,
-} from "../features/markdown/scrollSync";
-import {
   chooseDataDirectory,
   getConfig,
   migrateDataDir,
@@ -49,6 +41,8 @@ import { BackgroundLayer } from "./BackgroundLayer";
 import { ExternalFileListItem } from "./main/ExternalFileListItem";
 import { MainTitleBar } from "./main/MainTitleBar";
 import { NoteListItem } from "./main/NoteListItem";
+import { useDragResize } from "./main/useDragResize";
+import { useEditorPreviewScrollSync } from "../features/markdown/useEditorPreviewScrollSync";
 import { POPUP_VIEWPORT_MARGIN, useViewportPopupPosition } from "./popupPosition";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
@@ -199,18 +193,6 @@ export function MainWindow({
     useViewportPopupPosition(categoryMenu, categoryMenuConfirmDelete);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const windowLabelRef = useRef("main");
-  const previewScrollRef = useRef<HTMLDivElement>(null);
-  const scrollMaps = useRef<{
-    editorToPreview: ScrollSyncMap;
-    previewToEditor: ScrollSyncMap;
-  } | null>(null);
-  const scrollSource = useRef<"editor" | "preview" | null>(null);
-  const scrollSyncRafRef = useRef<number>(0);
-  const scrollReleaseRafRef = useRef<number>(0);
-  const measureDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const measureRafRef = useRef<number>(0);
-  const measureControllerRef = useRef<AbortController | null>(null);
-  const prevSelectedIdRef = useRef(selectedId);
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
   const imageBaseDir = useImageBaseDir();
@@ -1491,238 +1473,29 @@ export function MainWindow({
     }
   };
 
-  useEffect(() => {
-    if (!isResizingSidebar) return;
+  useDragResize(isResizingSidebar, setIsResizingSidebar, (e) => {
+    setSidebarWidth(Math.min(Math.max(e.clientX, 180), 500));
+  });
 
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
+  useDragResize(isResizingSplit, setIsResizingSplit, (e) => {
+    const container = splitContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    setSplitRatio(Math.min(Math.max(ratio, 0.2), 0.8));
+  });
 
-    const onMouseMove = (e: globalThis.MouseEvent) => {
-      const newWidth = Math.min(Math.max(e.clientX, 180), 500);
-      setSidebarWidth(newWidth);
-    };
-    const onMouseUp = () => setIsResizingSidebar(false);
-
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, [isResizingSidebar]);
-
-  useEffect(() => {
-    if (!isResizingSplit) return;
-
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-
-    const onMouseMove = (e: globalThis.MouseEvent) => {
-      const container = splitContainerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const ratio = (e.clientX - rect.left) / rect.width;
-      setSplitRatio(Math.min(Math.max(ratio, 0.2), 0.8));
-    };
-    const onMouseUp = () => setIsResizingSplit(false);
-
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, [isResizingSplit]);
-
-  const cancelScrollMeasurement = useCallback(() => {
-    if (measureDebounceRef.current) clearTimeout(measureDebounceRef.current);
-    cancelAnimationFrame(measureRafRef.current);
-    measureControllerRef.current?.abort();
-  }, []);
-
-  const cancelScheduledScrollSync = useCallback(() => {
-    cancelAnimationFrame(scrollSyncRafRef.current);
-    cancelAnimationFrame(scrollReleaseRafRef.current);
-    scrollSyncRafRef.current = 0;
-    scrollReleaseRafRef.current = 0;
-    scrollSource.current = null;
-  }, []);
-
-  const scrollSyncEnabled = settingsConfig?.splitScrollSync ?? true;
-
-  const scheduleScrollMeasurement = useCallback(
-    (delayMs: number) => {
-      if (viewMode !== "split" || !scrollSyncEnabled) return;
-      if (!contentRef.current || !previewScrollRef.current) return;
-
-      // 布局和测量稳定前先清空旧偏移量
-      scrollMaps.current = null;
-      cancelScrollMeasurement();
-
-      const controller = new AbortController();
-      measureControllerRef.current = controller;
-
-      const measure = async () => {
-        const textarea = contentRef.current;
-        const preview = previewScrollRef.current;
-        if (!textarea || !preview) return;
-
-        const editorOffsets = await measureBlockOffsets(content, textarea, controller.signal);
-        if (controller.signal.aborted) return;
-
-        tagPreviewBlocks(preview);
-        const previewOffsets = measurePreviewBlockOffsets(preview);
-        const editorMaxScroll = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
-        const previewMaxScroll = Math.max(0, preview.scrollHeight - preview.clientHeight);
-        scrollMaps.current = {
-          editorToPreview: createScrollSyncMap(
-            editorOffsets,
-            previewOffsets,
-            editorMaxScroll,
-            previewMaxScroll,
-          ),
-          previewToEditor: createScrollSyncMap(
-            previewOffsets,
-            editorOffsets,
-            previewMaxScroll,
-            editorMaxScroll,
-          ),
-        };
-      };
-
-      const runAfterLayout = () => {
-        measureRafRef.current = requestAnimationFrame(() => {
-          void measure();
-        });
-      };
-
-      if (delayMs > 0) {
-        measureDebounceRef.current = setTimeout(runAfterLayout, delayMs);
-      } else {
-        runAfterLayout();
-      }
-    },
-    [cancelScrollMeasurement, content, scrollSyncEnabled, viewMode],
-  );
-
-  // 切换笔记时通过 rAF 测量（不阻塞首帧渲染），编辑时 debounce 避免频繁重排
-  useEffect(() => {
-    if (viewMode !== "split" || !scrollSyncEnabled) {
-      scrollMaps.current = null;
-      cancelScrollMeasurement();
-      cancelScheduledScrollSync();
-      return;
-    }
-
-    const isNoteSwitch = prevSelectedIdRef.current !== selectedId;
-    prevSelectedIdRef.current = selectedId;
-    scheduleScrollMeasurement(isNoteSwitch ? 0 : 250);
-
-    return () => {
-      cancelScrollMeasurement();
-    };
-  }, [
-    cancelScrollMeasurement,
-    cancelScheduledScrollSync,
-    content,
-    scrollSyncEnabled,
-    scheduleScrollMeasurement,
-    selectedId,
-    settingsConfig?.fontSize,
-    settingsConfig?.renderHtmlMarkdown,
-    splitRatio,
+  const { previewScrollRef, handleEditorScroll, handlePreviewScroll } = useEditorPreviewScrollSync({
+    contentRef,
+    splitContainerRef,
     viewMode,
-  ]);
-
-  useEffect(() => {
-    if (viewMode !== "split") return;
-
-    const observedElements: Element[] = [];
-    if (splitContainerRef.current) observedElements.push(splitContainerRef.current);
-    if (contentRef.current) observedElements.push(contentRef.current);
-    if (previewScrollRef.current) observedElements.push(previewScrollRef.current);
-    const previewContent = previewScrollRef.current?.querySelector<HTMLElement>(".font-body");
-    if (previewContent) observedElements.push(previewContent);
-
-    if (typeof ResizeObserver === "undefined") {
-      const handleResize = () => scheduleScrollMeasurement(120);
-      window.addEventListener("resize", handleResize);
-      return () => window.removeEventListener("resize", handleResize);
-    }
-
-    if (observedElements.length === 0) return;
-
-    const observer = new ResizeObserver(() => {
-      scheduleScrollMeasurement(120);
-    });
-    observedElements.forEach((element) => observer.observe(element));
-
-    return () => observer.disconnect();
-  }, [scheduleScrollMeasurement, viewMode]);
-
-  // Reset preview scroll on note switch
-  useEffect(() => {
-    if (previewScrollRef.current) {
-      previewScrollRef.current.scrollTop = 0;
-    }
-  }, [selectedId]);
-
-  const releaseScrollSourceAfterPaint = useCallback((source: "editor" | "preview") => {
-    cancelAnimationFrame(scrollReleaseRafRef.current);
-    scrollReleaseRafRef.current = requestAnimationFrame(() => {
-      scrollReleaseRafRef.current = requestAnimationFrame(() => {
-        if (scrollSource.current === source) scrollSource.current = null;
-        scrollReleaseRafRef.current = 0;
-      });
-    });
-  }, []);
-
-  const scheduleSyncedScroll = useCallback(
-    (source: "editor" | "preview") => {
-      if (scrollSyncRafRef.current) return;
-      scrollSyncRafRef.current = requestAnimationFrame(() => {
-        scrollSyncRafRef.current = 0;
-        const textarea = contentRef.current;
-        const preview = previewScrollRef.current;
-        const maps = scrollMaps.current;
-        if (!textarea || !preview || !maps || scrollSource.current !== source) return;
-
-        if (source === "editor") {
-          preview.scrollTop = interpolateScrollOffset(maps.editorToPreview, textarea.scrollTop);
-        } else {
-          textarea.scrollTop = interpolateScrollOffset(maps.previewToEditor, preview.scrollTop);
-        }
-        releaseScrollSourceAfterPaint(source);
-      });
-    },
-    [releaseScrollSourceAfterPaint],
-  );
-
-  const handleEditorScroll = useCallback(() => {
-    if (viewMode !== "split" || !scrollSyncEnabled || !scrollMaps.current) return;
-    if (scrollSource.current === "preview") return;
-
-    scrollSource.current = "editor";
-    cancelAnimationFrame(scrollReleaseRafRef.current);
-    scrollReleaseRafRef.current = 0;
-    scheduleSyncedScroll("editor");
-  }, [scheduleSyncedScroll, scrollSyncEnabled, viewMode]);
-
-  const handlePreviewScroll = useCallback(() => {
-    if (viewMode !== "split" || !scrollSyncEnabled || !scrollMaps.current) return;
-    if (scrollSource.current === "editor") return;
-
-    scrollSource.current = "preview";
-    cancelAnimationFrame(scrollReleaseRafRef.current);
-    scrollReleaseRafRef.current = 0;
-    scheduleSyncedScroll("preview");
-  }, [scheduleSyncedScroll, scrollSyncEnabled, viewMode]);
-
-  useEffect(() => cancelScheduledScrollSync, [cancelScheduledScrollSync]);
+    enabled: settingsConfig?.splitScrollSync ?? true,
+    content,
+    selectedId,
+    fontSize: settingsConfig?.fontSize,
+    renderHtmlMarkdown: settingsConfig?.renderHtmlMarkdown,
+    splitRatio,
+  });
 
   const handlePinEntry = async () => {
     if (!selectedId) return;
