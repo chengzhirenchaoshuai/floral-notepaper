@@ -29,6 +29,7 @@ import type { UpdateInstallPrepareRequest } from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { MainTitleBar } from "./main/MainTitleBar";
 import { NoteSidebar } from "./main/NoteSidebar";
+import { useContextMenuState } from "./main/useContextMenuState";
 import { EditorToolbar } from "./main/EditorToolbar";
 import { FormatToolbar } from "./main/FormatToolbar";
 import { NoteHeader, type SaveState } from "./main/NoteHeader";
@@ -95,18 +96,6 @@ const SettingsPanel = lazy(() =>
   import("./SettingsPanel").then((module) => ({ default: module.SettingsPanel })),
 );
 
-interface NoteMenuState {
-  x: number;
-  y: number;
-  noteId: string;
-}
-
-interface CategoryMenuState {
-  x: number;
-  y: number;
-  category: string;
-}
-
 interface MainWindowProps {
   initialSettingsOpen?: boolean;
   initialConfig?: AppConfig;
@@ -132,8 +121,6 @@ export function MainWindow({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [noteMenu, setNoteMenu] = useState<NoteMenuState | null>(null);
-  const [noteMenuClosing, setNoteMenuClosing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [mountedSidePanel, setMountedSidePanel] = useState<SidePanelMode | null>(
@@ -143,6 +130,21 @@ export function MainWindow({
     Boolean(initialSettingsOpen && initialConfig),
   );
   const { aboutUpdateReminder, dismissReminderText } = useAboutUpdateReminder();
+  const {
+    noteMenu,
+    noteMenuClosing,
+    noteMenuMode,
+    setNoteMenuMode,
+    openNoteMenu,
+    closeNoteMenu,
+    categoryMenu,
+    categoryMenuClosing,
+    categoryMenuConfirmDelete,
+    categoryMenuHoverSuppressed,
+    openCategoryMenu,
+    closeCategoryMenu,
+    switchCategoryMenuPanel,
+  } = useContextMenuState();
   const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(initialConfig ?? null);
   const [savedDataDir, setSavedDataDir] = useState<string | null>(initialConfig?.dataDir ?? null);
   const [noteTransitionKey, setNoteTransitionKey] = useState(0);
@@ -151,7 +153,6 @@ export function MainWindow({
   const [categories, setCategories] = useState<string[]>([]);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [activeCategory, setActiveCategory] = useState<string>("");
-  const [noteMenuMode, setNoteMenuMode] = useState<"main" | "move">("main");
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameCategoryValue, setRenameCategoryValue] = useState("");
   const [settingsOverlay, setSettingsOverlay] = useState(() =>
@@ -162,10 +163,6 @@ export function MainWindow({
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isResizingSplit, setIsResizingSplit] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
-  const [categoryMenu, setCategoryMenu] = useState<CategoryMenuState | null>(null);
-  const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
-  const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
-  const [categoryMenuHoverSuppressed, setCategoryMenuHoverSuppressed] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const windowLabelRef = useRef("main");
   const externalFileMtimeRef = useRef<number>(0);
@@ -606,62 +603,6 @@ export function MainWindow({
     return () => window.clearInterval(interval);
   }, [selectedExternalFile]);
 
-  useEffect(() => {
-    function closeMenus() {
-      setNoteMenuClosing(true);
-      setCategoryMenuClosing(true);
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") closeMenus();
-    }
-
-    document.addEventListener("mousedown", closeMenus);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", closeMenus);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!noteMenuClosing || !noteMenu) return;
-    const timer = window.setTimeout(() => {
-      setNoteMenu(null);
-      setNoteMenuClosing(false);
-      setNoteMenuMode("main");
-    }, 150);
-    return () => window.clearTimeout(timer);
-  }, [noteMenuClosing, noteMenu]);
-
-  useEffect(() => {
-    if (!categoryMenuClosing || !categoryMenu) return;
-    const timer = window.setTimeout(() => {
-      setCategoryMenu(null);
-      setCategoryMenuClosing(false);
-      setCategoryMenuConfirmDelete(false);
-      setCategoryMenuHoverSuppressed(false);
-    }, 150);
-    return () => window.clearTimeout(timer);
-  }, [categoryMenuClosing, categoryMenu]);
-
-  useEffect(() => {
-    if (!categoryMenuHoverSuppressed || !categoryMenu) return;
-    const releaseHover = () => setCategoryMenuHoverSuppressed(false);
-    window.addEventListener("mousemove", releaseHover, { once: true });
-    window.addEventListener("mousedown", releaseHover, { once: true });
-    return () => {
-      window.removeEventListener("mousemove", releaseHover);
-      window.removeEventListener("mousedown", releaseHover);
-    };
-  }, [categoryMenuHoverSuppressed, categoryMenu]);
-
-  const switchCategoryMenuPanel = useCallback((confirmDelete: boolean) => {
-    setCategoryMenuHoverSuppressed(true);
-    setCategoryMenuConfirmDelete(confirmDelete);
-    (document.activeElement as HTMLElement | null)?.blur();
-  }, []);
-
   const performSave = useCallback(
     async (force: boolean): Promise<boolean> => {
       // 非强制保存（自动保存、切换前保存）在没有未保存修改时直接视为成功
@@ -1025,13 +966,8 @@ export function MainWindow({
     event.preventDefault();
     event.stopPropagation();
 
-    setNoteMenuClosing(false);
     setHoveredId(noteId);
-    setNoteMenu({
-      x: event.clientX,
-      y: event.clientY,
-      noteId,
-    });
+    openNoteMenu(event.clientX, event.clientY, noteId);
   };
 
   const handleExportNote = async (note: NoteMetadata) => {
@@ -1055,7 +991,7 @@ export function MainWindow({
     if (!note) return;
 
     if (action === "export") {
-      setNoteMenuClosing(true);
+      closeNoteMenu();
       void handleExportNote(note);
       return;
     }
@@ -1065,12 +1001,12 @@ export function MainWindow({
       return;
     }
 
-    setNoteMenuClosing(true);
+    closeNoteMenu();
     void handleDeleteNote(note.id);
   };
 
   const handleMoveNote = async (noteId: string, targetCategory: string) => {
-    setNoteMenuClosing(true);
+    closeNoteMenu();
     try {
       await moveNoteCategory(noteId, targetCategory);
       await refreshNotes();
@@ -1093,9 +1029,7 @@ export function MainWindow({
   const handleOpenCategoryMenu = (event: MouseEvent<HTMLElement>, category: string) => {
     event.preventDefault();
     event.stopPropagation();
-    setCategoryMenu({ x: event.clientX, y: event.clientY, category });
-    setCategoryMenuClosing(false);
-    setCategoryMenuConfirmDelete(false);
+    openCategoryMenu(event.clientX, event.clientY, category);
   };
 
   const handleRenameCategory = async (oldName: string) => {
@@ -1566,13 +1500,13 @@ export function MainWindow({
           confirmDelete={categoryMenuConfirmDelete}
           hoverSuppressed={categoryMenuHoverSuppressed}
           onRename={() => {
-            setCategoryMenuClosing(true);
+            closeCategoryMenu();
             setRenamingCategory(categoryMenu.category);
             setRenameCategoryValue(categoryMenu.category);
           }}
           onDelete={() => {
             void handleDeleteCategory(categoryMenu.category);
-            setCategoryMenuClosing(true);
+            closeCategoryMenu();
           }}
           onSwitchPanel={switchCategoryMenuPanel}
         />
