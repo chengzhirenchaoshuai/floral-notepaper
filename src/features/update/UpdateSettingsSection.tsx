@@ -13,12 +13,10 @@ import {
   cancelUpdate,
   checkForUpdates,
   downloadUpdate,
-  getMirrorChyanCdk,
   getUpdateSettings,
   getUpdateStatus,
   installUpdate,
   saveUpdateSettings,
-  setMirrorChyanCdk,
 } from "./api";
 import {
   getInitialUpdateStatusNotice,
@@ -28,7 +26,6 @@ import {
 } from "./presentation";
 import { getUpdateErrorCode, getUpdateErrorMessage } from "./updateErrors";
 import type {
-  DownloadSourcePreference,
   DownloadSourceUsed,
   UpdateChannel,
   UpdateDownloadProgress,
@@ -52,7 +49,7 @@ export function mergeStatusPayload(
   return incoming;
 }
 
-type BusyAction = "settings" | "checking" | "cdk" | "download" | "cancel" | "install" | null;
+type BusyAction = "settings" | "checking" | "download" | "cancel" | "install" | null;
 
 interface UpdateSettingsSectionProps {
   initialSettings?: UpdateSettings;
@@ -71,8 +68,6 @@ export function UpdateSettingsSection({
   const [settings, setSettings] = useState<UpdateSettings | null>(initialSettings ?? null);
   const [status, setStatus] = useState<UpdateState | null>(initialStatus ?? null);
   const [downloadProgress, setDownloadProgress] = useState<UpdateDownloadProgress | null>(null);
-  const [cdkInput, setCdkInput] = useState("");
-  const [showCdk, setShowCdk] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [notice, setNotice] = useState<UpdateInlineNotice | null>(() =>
     getInitialUpdateStatusNotice(initialStatus, t),
@@ -89,20 +84,6 @@ export function UpdateSettingsSection({
   useEffect(() => {
     latestChannelRef.current = settings?.channel ?? status?.channel ?? latestChannelRef.current;
   }, [settings?.channel, status?.channel]);
-
-  const sourceOptions = useMemo<Array<{ value: DownloadSourcePreference; label: string }>>(
-    () => [
-      {
-        value: "githubFirst",
-        label: t("settings.update.source.github", { defaultValue: "GitHub" }),
-      },
-      {
-        value: "mirrorChyanFirst",
-        label: t("settings.update.source.mirrorChyan", { defaultValue: "Mirror酱" }),
-      },
-    ],
-    [t],
-  );
 
   const intervalOptions = useMemo<Array<{ value: IntervalOption; label: string }>>(() => {
     const options = [
@@ -344,61 +325,6 @@ export function UpdateSettingsSection({
       checkIntervalHours: Number(value),
     });
   };
-
-  // Auto-save CDK with debounce when the user types a non-empty value.
-  // Flushes on unmount so the CDK is never lost when the user closes
-  // the settings panel before the debounce fires.
-  const cdkSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cdkSavedValue = useRef("");
-  const pendingCdkValue = useRef("");
-
-  useEffect(() => {
-    pendingCdkValue.current = cdkInput.trim();
-  }, [cdkInput]);
-
-  useEffect(() => {
-    const value = cdkInput.trim();
-    if (!value || value === cdkSavedValue.current) return;
-    if (cdkSaveTimer.current) clearTimeout(cdkSaveTimer.current);
-    cdkSaveTimer.current = setTimeout(() => {
-      cdkSavedValue.current = value;
-      setBusyAction("cdk");
-      setMirrorChyanCdk(value)
-        .then(() => getUpdateSettings())
-        .then((saved) => setSettings(saved))
-        .catch((error) => setNotice({ tone: "error", text: getUpdateErrorMessage(error, t) }))
-        .finally(() => setBusyAction(null));
-    }, 600);
-    return () => {
-      if (cdkSaveTimer.current) clearTimeout(cdkSaveTimer.current);
-    };
-  }, [cdkInput, t]);
-
-  // Flush pending CDK value on unmount so no typed input is lost.
-  useEffect(() => {
-    return () => {
-      const pending = pendingCdkValue.current;
-      if (!pending || pending === cdkSavedValue.current) return;
-      cdkSavedValue.current = pending;
-      setMirrorChyanCdk(pending).catch(() => {});
-    };
-  }, []);
-
-  // When the settings panel opens and a CDK is already saved, fetch the
-  // plaintext from the keyring so the input is pre-filled (masked by the
-  // password field type) and fully editable.
-  useEffect(() => {
-    if (!settings?.hasMirrorChyanCdk) return;
-    let cancelled = false;
-    getMirrorChyanCdk().then((cdk) => {
-      if (cancelled || !cdk) return;
-      setCdkInput(cdk);
-      cdkSavedValue.current = cdk;
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [settings?.hasMirrorChyanCdk]);
 
   const handleCheck = async () => {
     setBusyAction("checking");
@@ -646,110 +572,6 @@ export function UpdateSettingsSection({
                 value={intervalValue}
                 onChange={handleIntervalChange}
               />
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-[11px] font-body text-ink-faint">
-                {t("settings.update.source.label", { defaultValue: "下载源" })}
-              </label>
-              <SlidingButtonGroup
-                options={sourceOptions}
-                value={settings.downloadSourcePreference}
-                onChange={(value) => updateSettings("downloadSourcePreference", value)}
-                className="grid grid-cols-2"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-[11px] font-body text-ink-faint">
-                {t("settings.update.mirrorChyan.title", {
-                  defaultValue: "Mirror酱",
-                })}
-              </label>
-              <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  <input
-                    type={showCdk && cdkInput ? "text" : "password"}
-                    value={cdkInput}
-                    onChange={(event) => setCdkInput(event.target.value)}
-                    placeholder={t("settings.update.mirrorChyan.placeholder", {
-                      defaultValue: "点击输入文本",
-                    })}
-                    className="min-w-0 w-full h-8 px-2.5 pr-8 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none focus:border-bamboo/40 focus:bg-paper-warm/90 transition-colors"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowCdk((prev) => !prev)}
-                  disabled={!cdkInput}
-                  className="h-8 w-8 flex items-center justify-center rounded-lg border border-paper-deep/45 text-ink-ghost hover:text-ink-faint hover:bg-paper-warm disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer shrink-0"
-                  title={
-                    showCdk
-                      ? t("settings.update.mirrorChyan.hideCdk", {
-                          defaultValue: "隐藏 CDK",
-                        })
-                      : t("settings.update.mirrorChyan.showCdk", {
-                          defaultValue: "显示 CDK",
-                        })
-                  }
-                >
-                  {showCdk ? (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-              <p className="text-[10px] text-ink-ghost leading-relaxed">
-                {t("settings.update.mirrorChyan.noCdkHint", {
-                  defaultValue: "没有或者忘记 CDK？",
-                })}{" "}
-                <button
-                  type="button"
-                  onClick={() => void openUrl("https://mirrorchyan.com")}
-                  className="inline-flex items-center gap-0.5 text-ink-faint hover:text-bamboo cursor-pointer transition-colors"
-                >
-                  Mirror酱
-                  <svg
-                    className="w-[1em] h-[1em]"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M6 3h7v7M13 3L3 13" />
-                  </svg>
-                </button>
-                {t("settings.update.mirrorChyan.noCdkHintSuffix", {
-                  defaultValue: " 官网即刻获取。",
-                })}
-              </p>
             </div>
           </>
         ) : (

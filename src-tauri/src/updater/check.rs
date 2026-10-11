@@ -23,7 +23,8 @@ use std::{
 const MIRROR_CHYAN_MANIFEST_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_MIRROR_MANIFEST_PATH";
 const GITHUB_MANIFEST_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_GITHUB_MANIFEST_PATH";
 const GITHUB_REPO_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_GITHUB_REPO";
-const DEFAULT_GITHUB_REPO: &str = "Achilng/floral-notepaper";
+// 自用版：更新只检查本仓库的 GitHub Release
+const DEFAULT_GITHUB_REPO: &str = "chengzhirenchaoshuai/floral-notepaper";
 const MIRROR_CHYAN_API_BASE: &str = "https://mirrorchyan.com/api/resources";
 const MIRROR_CHYAN_RES_ID: &str = "floral";
 const MIRROR_CHYAN_RES_ID_OVERRIDE_ENV: &str = "FLORAL_NOTEPAPER_MIRROR_CHYAN_RES_ID";
@@ -228,6 +229,8 @@ impl UpdateCheckProvider for GithubProvider {
 pub(crate) struct UpdateCheckService {
     mirror_chyan: MirrorChyanProvider,
     github: GithubProvider,
+    // 自用版不使用 Mirror酱：生产环境关闭，测试中保留以覆盖原有逻辑
+    mirror_chyan_enabled: bool,
     platform_override: Option<PlatformInfo>,
 }
 
@@ -236,6 +239,7 @@ impl UpdateCheckService {
         Self {
             mirror_chyan: MirrorChyanProvider::from_env(),
             github: GithubProvider::from_env(),
+            mirror_chyan_enabled: false,
             platform_override: None,
         }
     }
@@ -306,6 +310,7 @@ impl UpdateCheckService {
         Self {
             mirror_chyan,
             github,
+            mirror_chyan_enabled: true,
             platform_override: None,
         }
     }
@@ -319,6 +324,7 @@ impl UpdateCheckService {
         Self {
             mirror_chyan,
             github,
+            mirror_chyan_enabled: true,
             platform_override: Some(platform),
         }
     }
@@ -334,7 +340,12 @@ impl UpdateCheckService {
         settings: &StoredUpdateSettings,
         context: &UpdateCheckContext,
     ) -> Result<(UpdateCheckResult, UpdateStateDto), AppError> {
-        let provider_order = check_provider_order(&settings.check_source_preference);
+        let provider_order: Vec<_> = check_provider_order(&settings.check_source_preference)
+            .into_iter()
+            .filter(|source| {
+                self.mirror_chyan_enabled || !matches!(source, DownloadSourceUsed::MirrorChyan)
+            })
+            .collect();
         debug_log!(
             "提供者检查顺序={:?} 检查源偏好={:?}",
             provider_order,

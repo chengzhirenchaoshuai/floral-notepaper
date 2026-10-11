@@ -78,12 +78,10 @@ describe("UpdateSettingsSection", () => {
     expect(markup).toContain("更新设置");
     expect(markup).toContain("自动检查更新");
     expect(markup).toContain("有新版本时自动下载");
-    expect(markup).toContain("下载源");
-    expect(markup).toContain("GitHub");
-    expect(markup).toContain("Mirror酱");
-    expect(markup).toContain("Mirror酱");
-    expect(markup).toContain("Mirror酱");
-    expect(markup).toContain("没有或者忘记 CDK？");
+    // 自用版只从 GitHub 更新，不显示下载源选择与 Mirror酱 CDK
+    expect(markup).not.toContain("下载源");
+    expect(markup).not.toContain("Mirror酱");
+    expect(markup).not.toContain("没有或者忘记 CDK？");
     expect(markup).not.toContain("当前版本：1.0.4");
     expect(markup).not.toContain("待更新版本：1.0.5");
   });
