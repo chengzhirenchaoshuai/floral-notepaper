@@ -558,7 +558,6 @@ fn schedule_force_terminate_self() {
 // entirely, which is safe here because the update helper will replace the
 // binary anyway.
 fn force_terminate_self() -> ! {
-    #[cfg(target_os = "windows")]
     unsafe {
         windows_sys::Win32::System::Threading::TerminateProcess(
             windows_sys::Win32::System::Threading::GetCurrentProcess(),
@@ -566,8 +565,6 @@ fn force_terminate_self() -> ! {
         );
         std::process::abort();
     }
-    #[cfg(not(target_os = "windows"))]
-    std::process::exit(0);
 }
 
 #[cfg(test)]

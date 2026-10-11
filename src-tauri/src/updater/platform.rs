@@ -11,16 +11,13 @@ use std::{
     sync::OnceLock,
 };
 
-#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-#[cfg(target_os = "windows")]
 use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Os {
     Windows,
-    Macos,
     Unsupported,
 }
 
@@ -41,7 +38,6 @@ pub struct PlatformInfo {
     pub app_id: String,
     pub install_kind: InstallKind,
     pub current_exe: Option<String>,
-    pub current_app_bundle: Option<String>,
 }
 
 impl PlatformInfo {
@@ -71,7 +67,7 @@ impl PlatformInfo {
         }
 
         match self.install_kind {
-            InstallKind::WindowsNsis | InstallKind::MacosAppBundle => Ok(()),
+            InstallKind::WindowsNsis => Ok(()),
             InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
             InstallKind::Unknown => Err(errors::unsupported_platform()),
         }
@@ -109,10 +105,6 @@ fn compute_platform_info() -> PlatformInfo {
         current_exe: current_exe
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
-        current_app_bundle: current_exe
-            .as_ref()
-            .and_then(|path| find_macos_app_bundle(path.as_path()))
-            .map(|path| path.to_string_lossy().to_string()),
     }
 }
 
@@ -130,7 +122,6 @@ pub(crate) fn current_install_kind() -> InstallKind {
 fn current_os() -> Os {
     match env::consts::OS {
         "windows" => Os::Windows,
-        "macos" => Os::Macos,
         _ => Os::Unsupported,
     }
 }
@@ -145,13 +136,6 @@ fn current_arch() -> Arch {
 
 fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
     match os {
-        Os::Macos => {
-            if current_exe.and_then(find_macos_app_bundle).is_some() {
-                InstallKind::MacosAppBundle
-            } else {
-                InstallKind::Unknown
-            }
-        }
         Os::Windows => {
             let Some(path) = current_exe else {
                 return InstallKind::Unknown;
@@ -173,7 +157,6 @@ fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
     }
 }
 
-#[cfg(target_os = "windows")]
 fn registry_reports_windows_nsis(current_exe: &Path) -> bool {
     const ROOTS: [&str; 4] = [
         r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -218,12 +201,6 @@ fn registry_reports_windows_nsis(current_exe: &Path) -> bool {
     })
 }
 
-#[cfg(not(target_os = "windows"))]
-fn registry_reports_windows_nsis(_current_exe: &Path) -> bool {
-    false
-}
-
-#[cfg(target_os = "windows")]
 fn reg_exe_path() -> PathBuf {
     env::var_os("SystemRoot")
         .map(PathBuf::from)
@@ -232,7 +209,6 @@ fn reg_exe_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\reg.exe"))
 }
 
-#[cfg(target_os = "windows")]
 fn registry_output_matches_installation(
     output: &str,
     current_exe_normalized: &str,
@@ -250,20 +226,8 @@ fn registry_output_matches_installation(
     })
 }
 
-#[cfg(target_os = "windows")]
 pub(crate) fn normalize_windows_path(value: &str) -> String {
     value.replace('/', "\\").to_ascii_lowercase()
-}
-
-pub(crate) fn find_macos_app_bundle(exe: &Path) -> Option<PathBuf> {
-    let mut current = exe.parent();
-    while let Some(path) = current {
-        if path.extension().and_then(|ext| ext.to_str()) == Some("app") {
-            return Some(path.to_path_buf());
-        }
-        current = path.parent();
-    }
-    None
 }
 
 #[derive(Debug, Clone)]
@@ -288,15 +252,14 @@ pub(crate) fn infer_asset_from_filename(name: &str, url: &str, size: u64) -> Opt
         return None;
     };
 
-    let (os, kind) = if lower.ends_with(".dmg") {
-        (Os::Macos, InstallKind::MacosAppBundle)
-    } else if lower.ends_with(".msi") || lower.ends_with("-setup.exe") || lower.contains("setup") {
-        (Os::Windows, InstallKind::WindowsNsis)
-    } else if lower.ends_with(".exe") {
-        (Os::Windows, InstallKind::WindowsPortable)
-    } else {
-        return None;
-    };
+    let (os, kind) =
+        if lower.ends_with(".msi") || lower.ends_with("-setup.exe") || lower.contains("setup") {
+            (Os::Windows, InstallKind::WindowsNsis)
+        } else if lower.ends_with(".exe") {
+            (Os::Windows, InstallKind::WindowsPortable)
+        } else {
+            return None;
+        };
 
     Some(InferredAsset {
         name: name.to_string(),
@@ -332,41 +295,6 @@ mod tests {
         );
 
         assert_eq!(install_kind, InstallKind::WindowsPortable);
-    }
-
-    #[test]
-    fn detects_macos_app_bundle() {
-        let bundle = find_macos_app_bundle(Path::new(
-            "/Applications/Floral Notepaper.app/Contents/MacOS/floral-notepaper",
-        ));
-
-        assert_eq!(
-            bundle,
-            Some(PathBuf::from("/Applications/Floral Notepaper.app"))
-        );
-        assert_eq!(
-            detect_install_kind(
-                Os::Macos,
-                Some(Path::new(
-                    "/Applications/Floral Notepaper.app/Contents/MacOS/floral-notepaper",
-                )),
-            ),
-            InstallKind::MacosAppBundle
-        );
-    }
-
-    #[test]
-    fn infers_macos_aarch64_dmg() {
-        let asset = infer_asset_from_filename(
-            "floral-notepaper_1.0.5_aarch64.dmg",
-            "https://github.com/example/releases/download/v1.0.5/app.dmg",
-            5000,
-        );
-        let asset = asset.expect("should match dmg");
-        assert_eq!(asset.os, Os::Macos);
-        assert_eq!(asset.arch, Arch::Aarch64);
-        assert_eq!(asset.kind, InstallKind::MacosAppBundle);
-        assert_eq!(asset.size, 5000);
     }
 
     #[test]
@@ -407,25 +335,14 @@ mod tests {
     }
 
     #[test]
-    fn treats_unbundled_macos_binary_as_unknown_install_kind() {
-        let install_kind = detect_install_kind(
-            Os::Macos,
-            Some(Path::new("/Users/test/dev/floral-notepaper")),
-        );
-
-        assert_eq!(install_kind, InstallKind::Unknown);
-    }
-
-    #[test]
     fn rejects_unknown_install_kind_for_in_app_updates() {
         let platform = PlatformInfo {
-            os: Os::Macos,
+            os: Os::Windows,
             arch: Arch::Aarch64,
             app_version: "1.0.3".into(),
             app_id: APP_ID.into(),
             install_kind: InstallKind::Unknown,
             current_exe: None,
-            current_app_bundle: None,
         };
 
         let error = platform
@@ -444,7 +361,6 @@ mod tests {
             app_id: APP_ID.into(),
             install_kind: InstallKind::WindowsPortable,
             current_exe: None,
-            current_app_bundle: None,
         };
 
         let error = platform

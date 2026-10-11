@@ -622,7 +622,7 @@ mod tests {
 
     fn test_context(install_kind: InstallKind) -> UpdateCheckContext {
         UpdateCheckContext {
-            platform: test_platform(Os::Macos, Arch::Aarch64, install_kind),
+            platform: test_platform(Os::Windows, Arch::X86_64, install_kind),
             current_version: Version::new(1, 0, 3),
             allow_prerelease: false,
             previous_state: UpdateStateDto::idle_with_version("1.0.3"),
@@ -637,7 +637,6 @@ mod tests {
             app_id: super::super::APP_ID.into(),
             install_kind,
             current_exe: None,
-            current_app_bundle: None,
         }
     }
 
@@ -659,11 +658,11 @@ mod tests {
     fn returns_source_not_configured_when_no_provider_fixture_exists_and_github_only() {
         let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::offline(),
-            test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
+            test_platform(Os::Windows, Arch::X86_64, InstallKind::WindowsNsis),
         );
         let settings = test_settings();
 
-        let result = service.evaluate(&settings, &test_context(InstallKind::MacosAppBundle));
+        let result = service.evaluate(&settings, &test_context(InstallKind::WindowsNsis));
         assert!(result.is_err());
     }
 
@@ -676,7 +675,7 @@ mod tests {
         let settings = test_settings();
 
         let (result, next_state) = service
-            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
+            .evaluate(&settings, &test_context(InstallKind::WindowsNsis))
             .expect("matching version should not error");
 
         assert_eq!(result.status, UpdateCheckStatus::NotAvailable);
@@ -693,7 +692,7 @@ mod tests {
         let settings = test_settings();
 
         let (result, next_state) = service
-            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
+            .evaluate(&settings, &test_context(InstallKind::WindowsNsis))
             .expect("available update should have asset url");
 
         assert!(result.asset_url.is_some());
@@ -706,7 +705,7 @@ mod tests {
         let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
         let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::with_manifest_path(github_manifest),
-            test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
+            test_platform(Os::Windows, Arch::X86_64, InstallKind::WindowsNsis),
         );
 
         service
@@ -722,7 +721,7 @@ mod tests {
         let paths = test_paths("check-run-unknown-platform");
         let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::offline(),
-            test_platform(Os::Macos, Arch::Aarch64, InstallKind::Unknown),
+            test_platform(Os::Windows, Arch::X86_64, InstallKind::Unknown),
         );
 
         let error = service
@@ -771,7 +770,7 @@ mod tests {
         let mut previous = UpdateStateDto::idle_with_version("1.0.3");
         previous.status = UpdateStatus::Available;
         previous.latest_version = Some("1.0.5".into());
-        previous.asset_name = Some("floral-notepaper_1.0.5_macos_aarch64_app.zip".into());
+        previous.asset_name = Some("floral-notepaper_1.0.5_x64-setup.exe".into());
         previous.asset_sha256 =
             Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into());
         previous.asset_size = Some(42);
@@ -779,7 +778,7 @@ mod tests {
 
         let service = UpdateCheckService::with_provider_and_platform(
             GithubProvider::offline(),
-            test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
+            test_platform(Os::Windows, Arch::X86_64, InstallKind::WindowsNsis),
         );
 
         let error = service
@@ -792,7 +791,7 @@ mod tests {
         assert_eq!(saved_state.latest_version.as_deref(), Some("1.0.5"));
         assert_eq!(
             saved_state.asset_name.as_deref(),
-            Some("floral-notepaper_1.0.5_macos_aarch64_app.zip")
+            Some("floral-notepaper_1.0.5_x64-setup.exe")
         );
         assert_eq!(saved_state.asset_size, Some(42));
     }

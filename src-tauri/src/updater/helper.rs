@@ -1,13 +1,10 @@
-#[cfg(target_os = "windows")]
 use super::platform::normalize_windows_path;
 use super::{
     file_lock::acquire_update_state_lock,
     settings::write_json_atomic,
     types::{InstallKind, UpdateErrorDto, UpdateInstallMode, UpdateStateDto, UpdateStatus},
-    UpdatePaths,
 };
 use chrono::Utc;
-#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::{
     collections::BTreeMap,
@@ -25,10 +22,7 @@ fn normalize_windows_path(value: &str) -> String {
     value.replace('/', "\\").to_ascii_lowercase()
 }
 
-#[cfg(target_os = "windows")]
 pub const HELPER_BINARY_NAME: &str = "floral-notepaper-update-helper.exe";
-#[cfg(not(target_os = "windows"))]
-pub const HELPER_BINARY_NAME: &str = "floral-notepaper-update-helper";
 
 // Give the GUI process enough time to flush notes, WebView state, and filesystem buffers before
 // the helper treats the handoff as failed. A premature timeout leaves the update recoverable but
@@ -39,9 +33,6 @@ const WAIT_FOR_REPLACEMENT_TIMEOUT: Duration = Duration::from_secs(30);
 const WATCHDOG_HELPER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const INSTALLER_TIMEOUT: Duration = Duration::from_secs(15 * 60);
-const UPDATE_STAGE_PREFIX: &str = ".floral-notepaper-update-stage-";
-#[cfg(target_os = "macos")]
-const MOUNT_STAGE_PREFIX: &str = ".floral-notepaper-mounted-dmg-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateHelperMode {
@@ -88,20 +79,7 @@ pub struct UpdateHelperCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AppliedUpdate {
     launch_target: PathBuf,
-    rollback: Option<InstallRollbackPlan>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct MacosRollbackPlan {
-    target_path: PathBuf,
-    backup_path: PathBuf,
-    stage_root: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum InstallRollbackPlan {
-    Macos(MacosRollbackPlan),
-    Windows(WindowsRollbackPlan),
+    rollback: Option<WindowsRollbackPlan>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -420,7 +398,7 @@ fn execute_apply(
     cleanup_after_install(command, log)?;
     if let Err(code) = relaunch_target(&applied_update.launch_target, log) {
         let failure_code = if let Some(rollback) = applied_update.rollback.as_ref() {
-            rollback_applied_update(rollback, log).err().unwrap_or(code)
+            rollback_windows_update(rollback, log).err().unwrap_or(code)
         } else {
             code
         };
@@ -755,7 +733,6 @@ fn apply_update(
     log: &mut File,
 ) -> Result<AppliedUpdate, UpdateHelperExitCode> {
     match command.install_kind {
-        InstallKind::MacosAppBundle => install_macos_bundle(command, log),
         InstallKind::WindowsPortable => install_windows_portable(command, log),
         InstallKind::WindowsNsis => install_windows_installer(command, log),
         InstallKind::Unknown => {
@@ -763,74 +740,6 @@ fn apply_update(
             Err(UpdateHelperExitCode::UnsupportedInstallKind)
         }
     }
-}
-
-fn install_macos_bundle(
-    command: &UpdateHelperCommand,
-    log: &mut File,
-) -> Result<AppliedUpdate, UpdateHelperExitCode> {
-    let target_parent = command
-        .target_path
-        .parent()
-        .ok_or(UpdateHelperExitCode::ReplacementFailed)?;
-    cleanup_stale_macos_stage_dirs(target_parent, log)?;
-    let stage_root = unique_temp_path(target_parent, "update-stage", None);
-    fs::create_dir_all(&stage_root).map_err(|_| UpdateHelperExitCode::ReplacementFailed)?;
-
-    let extension = command
-        .asset_path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-
-    let result = (|| {
-        let staged_bundle = if extension == "zip" {
-            extract_app_bundle_from_zip(
-                &command.asset_path,
-                &stage_root,
-                &command.target_path,
-                log,
-            )?
-        } else if extension == "dmg" {
-            stage_app_bundle_from_dmg(&command.asset_path, &stage_root, &command.target_path, log)?
-        } else {
-            write_log_line(
-                log,
-                &format!(
-                    "unsupported macOS asset format for install: {}",
-                    command.asset_path.display()
-                ),
-            )?;
-            return Err(UpdateHelperExitCode::AssetExtractFailed);
-        };
-
-        verify_macos_bundle(&staged_bundle, log)?;
-        swap_macos_bundles(&command.target_path, &staged_bundle, log)?;
-        Ok(MacosRollbackPlan {
-            target_path: command.target_path.clone(),
-            backup_path: staged_bundle,
-            stage_root: stage_root.clone(),
-        })
-    })();
-    let rollback = match result {
-        Ok(rollback) => rollback,
-        Err(code) => {
-            cleanup_stage_root(&stage_root, log)?;
-            return Err(code);
-        }
-    };
-    write_log_line(
-        log,
-        &format!(
-            "replaced macOS app bundle with version {}",
-            command.target_version
-        ),
-    )?;
-    Ok(AppliedUpdate {
-        launch_target: command.target_path.clone(),
-        rollback: Some(InstallRollbackPlan::Macos(rollback)),
-    })
 }
 
 fn install_windows_portable(
@@ -866,7 +775,6 @@ fn install_windows_installer(
                     "/passive",
                     "/norestart",
                 ]);
-                #[cfg(target_os = "windows")]
                 cmd.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
                 let mut child = cmd
                     .spawn()
@@ -928,7 +836,7 @@ fn install_windows_installer(
     )?;
     Ok(AppliedUpdate {
         launch_target,
-        rollback: Some(InstallRollbackPlan::Windows(rollback)),
+        rollback: Some(rollback),
     })
 }
 
@@ -1050,7 +958,6 @@ fn prepare_windows_rollback_plan(
     })
 }
 
-#[cfg(target_os = "windows")]
 fn shell_execute_installer(
     path: &Path,
     args: &str,
@@ -1127,182 +1034,6 @@ fn shell_execute_installer(
     }
 
     Ok(exit_code)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn shell_execute_installer(
-    _path: &Path,
-    _args: &str,
-    _log: &mut File,
-) -> Result<u32, UpdateHelperExitCode> {
-    Err(UpdateHelperExitCode::UnsupportedInstallKind)
-}
-
-fn extract_app_bundle_from_zip(
-    asset_path: &Path,
-    stage_root: &Path,
-    target_path: &Path,
-    log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
-    let extract_root = stage_root.join("unzipped");
-    fs::create_dir_all(&extract_root).map_err(|_| UpdateHelperExitCode::AssetExtractFailed)?;
-    write_log_line(
-        log,
-        &format!(
-            "extracting app zip {} to {}",
-            asset_path.display(),
-            extract_root.display()
-        ),
-    )?;
-    let status = Command::new("/usr/bin/ditto")
-        .args(["-x", "-k"])
-        .arg(asset_path)
-        .arg(&extract_root)
-        .status()
-        .map_err(|_| UpdateHelperExitCode::AssetExtractFailed)?;
-
-    if !status.success() {
-        write_log_line(
-            log,
-            &format!("ditto extract exited with status {:?}", status.code()),
-        )?;
-        return Err(UpdateHelperExitCode::AssetExtractFailed);
-    }
-
-    select_app_bundle(
-        &extract_root,
-        target_path.file_name().and_then(|value| value.to_str()),
-        log,
-    )
-}
-
-fn stage_app_bundle_from_dmg(
-    asset_path: &Path,
-    stage_root: &Path,
-    target_path: &Path,
-    log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
-    let mount_point = unique_temp_path(&std::env::temp_dir(), "mounted-dmg", None);
-    fs::create_dir_all(&mount_point).map_err(|_| UpdateHelperExitCode::AssetExtractFailed)?;
-    write_log_line(
-        log,
-        &format!(
-            "mounting dmg {} at {}",
-            asset_path.display(),
-            mount_point.display()
-        ),
-    )?;
-    let attach_status = Command::new("/usr/bin/hdiutil")
-        .args(["attach", "-nobrowse", "-readonly", "-mountpoint"])
-        .arg(&mount_point)
-        .arg(asset_path)
-        .status()
-        .map_err(|error| {
-            let _ = write_log_line(log, &format!("failed to run hdiutil attach: {error}"));
-            let _ = fs::remove_dir_all(&mount_point);
-            UpdateHelperExitCode::AssetExtractFailed
-        })?;
-
-    if !attach_status.success() {
-        write_log_line(
-            log,
-            &format!(
-                "hdiutil attach exited with status {:?}",
-                attach_status.code()
-            ),
-        )?;
-        let _ = fs::remove_dir_all(&mount_point);
-        return Err(UpdateHelperExitCode::AssetExtractFailed);
-    }
-
-    let result = (|| {
-        let mounted_bundle = select_app_bundle_from_mounted_dmg(
-            &mount_point,
-            target_path.file_name().and_then(|value| value.to_str()),
-            log,
-        )?;
-        let bundle_name = mounted_bundle
-            .file_name()
-            .ok_or(UpdateHelperExitCode::AssetExtractFailed)?;
-        let staged_bundle = stage_root.join(bundle_name);
-        write_log_line(
-            log,
-            &format!(
-                "copying mounted app bundle {} to {}",
-                mounted_bundle.display(),
-                staged_bundle.display()
-            ),
-        )?;
-        let status = Command::new("/usr/bin/ditto")
-            .arg(&mounted_bundle)
-            .arg(&staged_bundle)
-            .status()
-            .map_err(|_| UpdateHelperExitCode::AssetExtractFailed)?;
-        if !status.success() {
-            write_log_line(
-                log,
-                &format!("ditto copy exited with status {:?}", status.code()),
-            )?;
-            return Err(UpdateHelperExitCode::AssetExtractFailed);
-        }
-        Ok(staged_bundle)
-    })();
-
-    cleanup_macos_mount(&mount_point, log)?;
-    result
-}
-
-fn cleanup_macos_mount(mount_point: &Path, log: &mut File) -> Result<(), UpdateHelperExitCode> {
-    let detach_status = Command::new("/usr/bin/hdiutil")
-        .args(["detach"])
-        .arg(mount_point)
-        .status();
-    match detach_status {
-        Ok(status) if status.success() => {}
-        Ok(status) => {
-            write_log_line(
-                log,
-                &format!(
-                    "hdiutil detach exited with status {:?}; retrying with -force",
-                    status.code()
-                ),
-            )?;
-            let force_status = Command::new("/usr/bin/hdiutil")
-                .args(["detach", "-force"])
-                .arg(mount_point)
-                .status()
-                .map_err(|_| UpdateHelperExitCode::AssetExtractFailed)?;
-            if !force_status.success() {
-                write_log_line(
-                    log,
-                    &format!(
-                        "hdiutil detach -force exited with status {:?}",
-                        force_status.code()
-                    ),
-                )?;
-                return Err(UpdateHelperExitCode::AssetExtractFailed);
-            }
-        }
-        Err(error) => {
-            write_log_line(log, &format!("failed to run hdiutil detach: {error}"))?;
-            return Err(UpdateHelperExitCode::AssetExtractFailed);
-        }
-    }
-
-    match fs::remove_dir_all(mount_point) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => {
-            write_log_line(
-                log,
-                &format!(
-                    "failed to remove macOS dmg mount directory {} ({error})",
-                    mount_point.display()
-                ),
-            )?;
-            Err(UpdateHelperExitCode::AssetExtractFailed)
-        }
-    }
 }
 
 fn wait_for_installer_completion(
@@ -1409,7 +1140,6 @@ fn wait_for_target_to_exist(
     Err(UpdateHelperExitCode::InstallerFailed)
 }
 
-#[cfg(target_os = "windows")]
 fn verify_windows_installed_version(
     target_path: &Path,
     target_version: &str,
@@ -1450,16 +1180,6 @@ fn verify_windows_installed_version(
     Err(UpdateHelperExitCode::InstallerVersionMismatch)
 }
 
-#[cfg(not(target_os = "windows"))]
-fn verify_windows_installed_version(
-    _target_path: &Path,
-    _target_version: &str,
-    _log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
 fn windows_file_versions(path: &Path) -> Option<Vec<String>> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
@@ -1521,7 +1241,6 @@ fn windows_file_versions(path: &Path) -> Option<Vec<String>> {
     Some(versions)
 }
 
-#[cfg(target_os = "windows")]
 fn fixed_file_version_text(ms: u32, ls: u32) -> String {
     let major = ms >> 16;
     let minor = ms & 0xffff;
@@ -1564,7 +1283,6 @@ fn numeric_version_prefix(version: &str) -> Option<Vec<u64>> {
     (!components.is_empty()).then_some(components)
 }
 
-#[cfg(target_os = "windows")]
 fn resolve_windows_launch_target(
     target_path: &Path,
     log: &mut File,
@@ -1605,15 +1323,6 @@ fn resolve_windows_launch_target(
     Err(UpdateHelperExitCode::InstallerVersionMismatch)
 }
 
-#[cfg(not(target_os = "windows"))]
-fn resolve_windows_launch_target(
-    target_path: &Path,
-    _log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
-    Ok(target_path.to_path_buf())
-}
-
-#[cfg(target_os = "windows")]
 fn backup_windows_registry_state(
     command: &UpdateHelperCommand,
     backup_parent: &Path,
@@ -1685,16 +1394,6 @@ fn backup_windows_registry_state(
     }))
 }
 
-#[cfg(not(target_os = "windows"))]
-fn backup_windows_registry_state(
-    _command: &UpdateHelperCommand,
-    _backup_parent: &Path,
-    _log: &mut File,
-) -> Result<Option<WindowsRegistryRollbackPlan>, UpdateHelperExitCode> {
-    Ok(None)
-}
-
-#[cfg(target_os = "windows")]
 fn query_windows_install_record_from_registry(
     exe_name: &str,
     expected_target_path: Option<&Path>,
@@ -1725,7 +1424,6 @@ fn query_windows_install_record_from_registry(
     })
 }
 
-#[cfg(target_os = "windows")]
 fn reg_exe_path() -> PathBuf {
     std::env::var_os("SystemRoot")
         .map(PathBuf::from)
@@ -1734,7 +1432,6 @@ fn reg_exe_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\reg.exe"))
 }
 
-#[cfg(target_os = "windows")]
 fn query_windows_install_registry_record(
     key_path: &str,
     exe_name: &str,
@@ -2053,7 +1750,6 @@ fn contains_windows_command_flag(command: &str, flag: &str) -> bool {
         .any(|token| token.eq_ignore_ascii_case(flag))
 }
 
-#[cfg(target_os = "windows")]
 fn available_disk_space(path: &Path) -> Option<u64> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
@@ -2072,27 +1768,6 @@ fn available_disk_space(path: &Path) -> Option<u64> {
     (success != 0).then_some(available)
 }
 
-#[cfg(unix)]
-fn available_disk_space(path: &Path) -> Option<u64> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-
-    let path = CString::new(path.as_os_str().as_bytes()).ok()?;
-    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
-    let result = unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return None;
-    }
-    let stat = unsafe { stat.assume_init() };
-    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize))
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn available_disk_space(_path: &Path) -> Option<u64> {
-    None
-}
-
-#[cfg(target_os = "windows")]
 fn process_is_running(pid: u32, expected_target_path: Option<&Path>) -> bool {
     use windows_sys::Win32::{
         Foundation::CloseHandle,
@@ -2117,7 +1792,6 @@ fn process_is_running(pid: u32, expected_target_path: Option<&Path>) -> bool {
     }
 }
 
-#[cfg(target_os = "windows")]
 fn query_windows_process_image_path(
     handle: windows_sys::Win32::Foundation::HANDLE,
 ) -> Option<PathBuf> {
@@ -2134,7 +1808,6 @@ fn query_windows_process_image_path(
     Some(PathBuf::from(OsString::from_wide(&buffer)))
 }
 
-#[cfg(target_os = "windows")]
 fn windows_paths_match(actual: &Path, expected: &Path) -> bool {
     let actual = fs::canonicalize(actual).unwrap_or_else(|_| actual.to_path_buf());
     let expected = fs::canonicalize(expected).unwrap_or_else(|_| expected.to_path_buf());
@@ -2142,7 +1815,6 @@ fn windows_paths_match(actual: &Path, expected: &Path) -> bool {
         == normalize_windows_path(&expected.to_string_lossy())
 }
 
-#[cfg(target_os = "windows")]
 fn force_terminate_process(pid: u32, log: &mut File) -> bool {
     use windows_sys::Win32::{
         Foundation::CloseHandle,
@@ -2176,103 +1848,6 @@ fn force_terminate_process(pid: u32, log: &mut File) -> bool {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn force_terminate_process(pid: u32, _log: &mut File) -> bool {
-    Command::new("/bin/kill")
-        .args(["-9", &pid.to_string()])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
-#[cfg(not(target_os = "windows"))]
-use std::process::Stdio;
-
-#[cfg(not(target_os = "windows"))]
-fn process_is_running(pid: u32, expected_target_path: Option<&Path>) -> bool {
-    let signal_ok = Command::new("/bin/kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
-    if !signal_ok {
-        return false;
-    }
-
-    match expected_target_path {
-        Some(expected) => unix_pid_matches_expected_target(pid, expected),
-        None => true,
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn unix_pid_matches_expected_target(pid: u32, expected_target_path: &Path) -> bool {
-    let Some(expected_name) = expected_process_name(expected_target_path) else {
-        return true;
-    };
-    match unix_process_command_name(pid) {
-        Some(actual_name) => {
-            actual_name == expected_name || actual_name.ends_with(&format!("/{expected_name}"))
-        }
-        None => true,
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn expected_process_name(path: &Path) -> Option<String> {
-    let executable_path = if path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
-    {
-        let macos_dir = path.join("Contents").join("MacOS");
-        if let Some(executable_name) = single_child_file_name(&macos_dir) {
-            return Some(executable_name);
-        }
-        path.join("Contents").join("MacOS").join(path.file_stem()?)
-    } else {
-        path.to_path_buf()
-    };
-    executable_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(ToOwned::to_owned)
-}
-
-#[cfg(not(target_os = "windows"))]
-fn single_child_file_name(path: &Path) -> Option<String> {
-    let mut names = fs::read_dir(path)
-        .ok()?
-        .flatten()
-        .filter_map(|entry| {
-            let file_type = entry.file_type().ok()?;
-            if !file_type.is_file() {
-                return None;
-            }
-            entry.file_name().to_str().map(ToOwned::to_owned)
-        })
-        .collect::<Vec<_>>();
-    names.sort();
-    (names.len() == 1).then(|| names.remove(0))
-}
-
-#[cfg(not(target_os = "windows"))]
-fn unix_process_command_name(pid: u32) -> Option<String> {
-    let output = Command::new("/bin/ps")
-        .args(["-p", &pid.to_string(), "-o", "comm="])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8(output.stdout).ok()?;
-    text.lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(ToOwned::to_owned)
-}
-
 fn relaunch_existing_target(
     command: &UpdateHelperCommand,
     log: &mut File,
@@ -2289,10 +1864,7 @@ fn relaunch_target(target_path: &Path, log: &mut File) -> Result<(), UpdateHelpe
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
     {
-        write_log_line(
-            log,
-            &format!("relaunching app bundle {}", target_path.display()),
-        )?;
+        write_log_line(log, &format!("relaunching app {}", target_path.display()))?;
         let status = Command::new("/usr/bin/open")
             .arg(target_path)
             .status()
@@ -2375,90 +1947,34 @@ fn cleanup_after_install(
     })
 }
 
-fn cleanup_stage_root(stage_root: &Path, log: &mut File) -> Result<(), UpdateHelperExitCode> {
-    if !stage_root.exists() {
-        return Ok(());
-    }
-    if let Err(error) = fs::remove_dir_all(stage_root) {
-        write_log_line(
-            log,
-            &format!(
-                "failed to remove temporary update stage {} ({error})",
-                stage_root.display()
-            ),
-        )?;
-    }
-    Ok(())
-}
-
 fn cleanup_applied_update(
     applied_update: &AppliedUpdate,
     log: &mut File,
 ) -> Result<(), UpdateHelperExitCode> {
     if let Some(rollback) = applied_update.rollback.as_ref() {
-        match rollback {
-            InstallRollbackPlan::Macos(rollback) => {
-                write_log_line(
+        fs::remove_dir_all(&rollback.backup_dir).map_err(|error| {
+            let _ = write_log_line(
+                log,
+                &format!(
+                    "failed to remove Windows rollback backup {} ({error})",
+                    rollback.backup_dir.display()
+                ),
+            );
+            UpdateHelperExitCode::CleanupFailed
+        })?;
+        if let Some(registry_backup) = rollback.registry_backup.as_ref() {
+            remove_file_if_exists(&registry_backup.backup_path).map_err(|error| {
+                let _ = write_log_line(
                     log,
                     &format!(
-                        "retaining macOS rollback backup after relaunch: {}",
-                        rollback.stage_root.display()
+                        "failed to remove Windows registry rollback backup {} ({error})",
+                        registry_backup.backup_path.display()
                     ),
-                )?;
-            }
-            InstallRollbackPlan::Windows(rollback) => {
-                fs::remove_dir_all(&rollback.backup_dir).map_err(|error| {
-                    let _ = write_log_line(
-                        log,
-                        &format!(
-                            "failed to remove Windows rollback backup {} ({error})",
-                            rollback.backup_dir.display()
-                        ),
-                    );
-                    UpdateHelperExitCode::CleanupFailed
-                })?;
-                if let Some(registry_backup) = rollback.registry_backup.as_ref() {
-                    remove_file_if_exists(&registry_backup.backup_path).map_err(|error| {
-                        let _ = write_log_line(
-                            log,
-                            &format!(
-                                "failed to remove Windows registry rollback backup {} ({error})",
-                                registry_backup.backup_path.display()
-                            ),
-                        );
-                        UpdateHelperExitCode::CleanupFailed
-                    })?;
-                }
-            }
+                );
+                UpdateHelperExitCode::CleanupFailed
+            })?;
         }
     }
-    Ok(())
-}
-
-fn rollback_applied_update(
-    rollback: &InstallRollbackPlan,
-    log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    match rollback {
-        InstallRollbackPlan::Macos(rollback) => rollback_macos_update(rollback, log),
-        InstallRollbackPlan::Windows(rollback) => rollback_windows_update(rollback, log),
-    }
-}
-
-fn rollback_macos_update(
-    rollback: &MacosRollbackPlan,
-    log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    write_log_line(
-        log,
-        &format!(
-            "relaunch failed after macOS bundle swap; rolling back {} from {}",
-            rollback.target_path.display(),
-            rollback.backup_path.display()
-        ),
-    )?;
-    swap_macos_bundles(&rollback.target_path, &rollback.backup_path, log)?;
-    cleanup_stage_root(&rollback.stage_root, log)?;
     Ok(())
 }
 
@@ -2526,7 +2042,6 @@ fn rollback_windows_update(
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
 fn best_effort_uninstall_windows_installation(
     rollback: &WindowsRollbackPlan,
     log: &mut File,
@@ -2605,15 +2120,6 @@ fn best_effort_uninstall_windows_installation(
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
-fn best_effort_uninstall_windows_installation(
-    _rollback: &WindowsRollbackPlan,
-    _log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
 fn restore_windows_registry_backup(
     rollback: &WindowsRollbackPlan,
     log: &mut File,
@@ -2657,15 +2163,6 @@ fn restore_windows_registry_backup(
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
-fn restore_windows_registry_backup(
-    _rollback: &WindowsRollbackPlan,
-    _log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
 fn windows_shell_command(command: &str) -> Command {
     let mut process = Command::new("cmd");
     process.args(["/C", command]);
@@ -2734,7 +2231,6 @@ fn fallback_bucket_key(path: &Path) -> String {
     existing_probe_path(path).display().to_string()
 }
 
-#[cfg(target_os = "windows")]
 fn storage_bucket_key(path: &Path) -> Option<String> {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
     use windows_sys::Win32::Storage::FileSystem::GetVolumePathNameW;
@@ -2757,20 +2253,6 @@ fn storage_bucket_key(path: &Path) -> Option<String> {
     )
 }
 
-#[cfg(unix)]
-fn storage_bucket_key(path: &Path) -> Option<String> {
-    use std::os::unix::fs::MetadataExt;
-
-    let probe = existing_probe_path(path);
-    let metadata = fs::metadata(probe).ok()?;
-    Some(metadata.dev().to_string())
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn storage_bucket_key(path: &Path) -> Option<String> {
-    Some(existing_probe_path(path).display().to_string())
-}
-
 fn map_copy_error_code(
     error: &std::io::Error,
     fallback: UpdateHelperExitCode,
@@ -2782,185 +2264,8 @@ fn map_copy_error_code(
     }
 }
 
-#[cfg(target_os = "windows")]
 fn is_insufficient_space_error(error: &std::io::Error) -> bool {
     matches!(error.raw_os_error(), Some(39 | 112))
-}
-
-#[cfg(unix)]
-fn is_insufficient_space_error(error: &std::io::Error) -> bool {
-    matches!(
-        error.raw_os_error(),
-        Some(code) if code == libc::ENOSPC || code == libc::EDQUOT
-    )
-}
-
-#[cfg(not(any(unix, target_os = "windows")))]
-fn is_insufficient_space_error(_error: &std::io::Error) -> bool {
-    false
-}
-
-fn cleanup_stale_macos_stage_dirs(
-    parent: &Path,
-    log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    let Ok(entries) = fs::read_dir(parent) else {
-        return Ok(());
-    };
-
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        if !is_update_stage_name(name) {
-            continue;
-        }
-
-        let path = entry.path();
-        let remove_result = if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
-            fs::remove_dir_all(&path)
-        } else {
-            fs::remove_file(&path)
-        };
-
-        match remove_result {
-            Ok(()) => {
-                write_log_line(
-                    log,
-                    &format!("removed stale macOS update stage {}", path.display()),
-                )?;
-            }
-            Err(error) => {
-                write_log_line(
-                    log,
-                    &format!(
-                        "failed to remove stale macOS update stage {} ({error})",
-                        path.display()
-                    ),
-                )?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn is_update_stage_name(name: &str) -> bool {
-    name.starts_with(UPDATE_STAGE_PREFIX)
-}
-
-fn select_app_bundle_from_mounted_dmg(
-    mount_point: &Path,
-    expected_name: Option<&str>,
-    log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
-    if let Some(expected_name) = expected_name {
-        let exact_match = mount_point.join(expected_name);
-        if is_real_app_bundle(&exact_match) {
-            return Ok(exact_match);
-        }
-    }
-
-    let bundles = find_top_level_app_bundles(mount_point);
-    if bundles.is_empty() {
-        write_log_line(log, "no app bundle found at dmg root")?;
-        return Err(UpdateHelperExitCode::AssetExtractFailed);
-    }
-
-    if let Some(expected_name) = expected_name {
-        if let Some(bundle) = bundles.iter().find(|bundle| {
-            bundle
-                .file_name()
-                .and_then(|value| value.to_str())
-                .is_some_and(|name| name == expected_name)
-        }) {
-            return Ok(bundle.clone());
-        }
-    }
-
-    if bundles.len() == 1 {
-        return Ok(bundles
-            .into_iter()
-            .next()
-            .expect("single dmg root app bundle"));
-    }
-
-    write_log_line(
-        log,
-        "multiple top-level app bundles found in dmg payload and none matched target name",
-    )?;
-    Err(UpdateHelperExitCode::AssetExtractFailed)
-}
-
-fn find_top_level_app_bundles(root: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(root) else {
-        return Vec::new();
-    };
-
-    let mut bundles = entries
-        .flatten()
-        .filter_map(|entry| {
-            let candidate = entry.path();
-            let file_type = entry.file_type().ok()?;
-            if file_type.is_symlink() || !file_type.is_dir() || !is_real_app_bundle(&candidate) {
-                return None;
-            }
-            Some(candidate)
-        })
-        .collect::<Vec<_>>();
-    bundles.sort();
-    bundles
-}
-
-fn is_real_app_bundle(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
-        && fs::symlink_metadata(path)
-            .map(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
-            .unwrap_or(false)
-}
-
-fn should_skip_bundle_search_entry(entry: &fs::DirEntry) -> bool {
-    entry.file_name().to_str().is_some_and(is_update_stage_name)
-}
-
-fn find_app_bundles(root: &Path) -> Vec<PathBuf> {
-    if is_real_app_bundle(root) {
-        return vec![root.to_path_buf()];
-    }
-
-    let mut results = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(path) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&path) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            if should_skip_bundle_search_entry(&entry) {
-                continue;
-            }
-
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_symlink() {
-                continue;
-            }
-
-            let candidate = entry.path();
-            if file_type.is_dir() && is_real_app_bundle(&candidate) {
-                results.push(candidate);
-                continue;
-            }
-            if file_type.is_dir() {
-                stack.push(candidate);
-            }
-        }
-    }
-    results.sort();
-    results
 }
 
 fn mutate_state_snapshot<F>(
@@ -3100,106 +2405,10 @@ fn install_error_action(code: UpdateHelperExitCode) -> &'static str {
     }
 }
 
-fn select_app_bundle(
-    root: &Path,
-    expected_name: Option<&str>,
-    log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
-    let bundles = find_app_bundles(root);
-    if bundles.is_empty() {
-        write_log_line(log, "no app bundle found in extracted update payload")?;
-        return Err(UpdateHelperExitCode::AssetExtractFailed);
-    }
-
-    if let Some(expected_name) = expected_name {
-        if let Some(bundle) = bundles.iter().find(|bundle| {
-            bundle
-                .file_name()
-                .and_then(|value| value.to_str())
-                .is_some_and(|name| name == expected_name)
-        }) {
-            return Ok(bundle.clone());
-        }
-    }
-
-    if bundles.len() == 1 {
-        return Ok(bundles.into_iter().next().expect("single app bundle"));
-    }
-
-    write_log_line(
-        log,
-        "multiple app bundles found in update payload and none matched target name",
-    )?;
-    Err(UpdateHelperExitCode::AssetExtractFailed)
-}
-
-fn verify_macos_bundle(bundle: &Path, log: &mut File) -> Result<(), UpdateHelperExitCode> {
-    let _ = bundle;
-    let _ = log;
-
-    let spctl_path = Path::new("/usr/sbin/spctl");
-    if spctl_path.exists() {
-        let status = Command::new(spctl_path)
-            .args(["--assess", "--type", "execute"])
-            .arg(bundle)
-            .status()
-            .map_err(|_| UpdateHelperExitCode::ReplacementFailed)?;
-        if !status.success() {
-            write_log_line(
-                log,
-                &format!("spctl assess failed with status {:?}", status.code()),
-            )?;
-            return Err(UpdateHelperExitCode::ReplacementFailed);
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn swap_macos_bundles(
-    target_path: &Path,
-    staged_bundle: &Path,
-    log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    use std::ffi::CString;
-
-    let target = CString::new(target_path.to_string_lossy().as_bytes())
-        .map_err(|_| UpdateHelperExitCode::ReplacementFailed)?;
-    let staged = CString::new(staged_bundle.to_string_lossy().as_bytes())
-        .map_err(|_| UpdateHelperExitCode::ReplacementFailed)?;
-
-    let result = unsafe { libc::renamex_np(staged.as_ptr(), target.as_ptr(), libc::RENAME_SWAP) };
-    if result != 0 {
-        let error = std::io::Error::last_os_error();
-        write_log_line(
-            log,
-            &format!(
-                "failed to atomically swap app bundle {} with {} ({error})",
-                staged_bundle.display(),
-                target_path.display()
-            ),
-        )?;
-        return Err(UpdateHelperExitCode::ReplacementFailed);
-    }
-
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn swap_macos_bundles(
-    _target_path: &Path,
-    _staged_bundle: &Path,
-    _log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    Err(UpdateHelperExitCode::ReplacementFailed)
-}
-
 fn install_kind_as_str(kind: &InstallKind) -> &'static str {
     match kind {
         InstallKind::WindowsNsis => "windows-nsis",
         InstallKind::WindowsPortable => "windows-portable",
-        InstallKind::MacosAppBundle => "macos-app-bundle",
         InstallKind::Unknown => "unknown",
     }
 }
@@ -3208,7 +2417,6 @@ fn parse_install_kind(value: &str) -> Option<InstallKind> {
     match value.trim() {
         "windows-nsis" | "windowsNsis" => Some(InstallKind::WindowsNsis),
         "windows-portable" | "windowsPortable" => Some(InstallKind::WindowsPortable),
-        "macos-app-bundle" | "macosAppBundle" => Some(InstallKind::MacosAppBundle),
         "unknown" => Some(InstallKind::Unknown),
         _ => None,
     }
@@ -3286,38 +2494,9 @@ fn sha256_hex(path: &Path) -> Result<String, std::io::Error> {
     super::sha256_hex(path)
 }
 
-#[cfg(target_os = "macos")]
-pub(crate) fn cleanup_stale_macos_mounts(_paths: &UpdatePaths) {
-    let temp_dir = std::env::temp_dir();
-    let entries = match fs::read_dir(&temp_dir) {
-        Ok(entries) => entries,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
-            continue;
-        };
-        if !name.starts_with(MOUNT_STAGE_PREFIX) {
-            continue;
-        }
-        let _ = Command::new("/usr/bin/hdiutil")
-            .args(["detach", "-force"])
-            .arg(&path)
-            .status();
-        let _ = fs::remove_dir_all(&path);
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn cleanup_stale_macos_mounts(_paths: &UpdatePaths) {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
-    use std::os::unix::fs::symlink;
 
     struct TestDir {
         path: PathBuf,
@@ -3353,12 +2532,12 @@ mod tests {
         let asset_path = root.join("asset.bin");
         fs::write(&asset_path, b"hello helper").expect("write asset");
 
-        let target_path = root.join("target.app");
+        let target_path = root.join("target.exe");
         fs::create_dir_all(&target_path).expect("create target");
 
         UpdateHelperCommand {
             mode: UpdateHelperMode::Test,
-            install_kind: InstallKind::MacosAppBundle,
+            install_kind: InstallKind::WindowsNsis,
             wait_pid: 42,
             state_path: root.join("state.json"),
             asset_sha256: sha256_hex(&asset_path).expect("hash asset"),
@@ -3372,11 +2551,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
-    fn temp_log(root: &Path, name: &str) -> File {
-        open_log(&root.join(name)).expect("open temp log")
-    }
-
     #[test]
     fn waits_long_enough_for_slow_main_process_shutdown() {
         assert!(WAIT_FOR_EXIT_TIMEOUT >= Duration::from_secs(120));
@@ -3388,7 +2562,7 @@ mod tests {
             OsString::from("--mode"),
             OsString::from("apply"),
             OsString::from("--install-kind"),
-            OsString::from("macos-app-bundle"),
+            OsString::from("windows-nsis"),
             OsString::from("--wait-pid"),
             OsString::from("42"),
             OsString::from("--state-path"),
@@ -3400,7 +2574,7 @@ mod tests {
             OsString::from("--asset-size"),
             OsString::from("42"),
             OsString::from("--target-path"),
-            OsString::from("/Applications/Floral Notepaper.app"),
+            OsString::from(r"C:\Program Files\Floral Notepaper\floral-notepaper.exe"),
             OsString::from("--log-path"),
             OsString::from("/tmp/helper.log"),
             OsString::from("--ready-path"),
@@ -3414,7 +2588,7 @@ mod tests {
         let parsed = parse_args(args).expect("parse helper args");
 
         assert_eq!(parsed.mode, UpdateHelperMode::Apply);
-        assert_eq!(parsed.install_kind, InstallKind::MacosAppBundle);
+        assert_eq!(parsed.install_kind, InstallKind::WindowsNsis);
         assert_eq!(parsed.wait_pid, 42);
         assert_eq!(parsed.asset_size, 42);
         assert_eq!(parsed.current_version, "1.0.3");
@@ -3471,14 +2645,13 @@ mod tests {
     fn returns_target_missing_exit_code() {
         let root = temp_dir("helper-target-missing");
         let mut command = helper_command(&root);
-        command.target_path = root.join("missing-target.app");
+        command.target_path = root.join("missing-target.exe");
 
         let exit_code = execute(&command).expect_err("missing target should fail");
 
         assert_eq!(exit_code, UpdateHelperExitCode::TargetMissing);
     }
 
-    #[cfg(target_os = "windows")]
     #[test]
     fn runs_extensionless_asset_as_exe_for_nsis_install() {
         let root = temp_dir("helper-windows-installer-no-extension");
@@ -3547,38 +2720,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "windows"))]
-    fn expected_process_name_uses_macos_bundle_executable() {
-        let root = temp_dir("helper-expected-process-name");
-        let bundle = root.join("花笺.app");
-        let macos_dir = bundle.join("Contents").join("MacOS");
-        fs::create_dir_all(&macos_dir).expect("create macos dir");
-        fs::write(macos_dir.join("floral-notepaper"), b"binary").expect("write binary");
-
-        assert_eq!(
-            expected_process_name(&bundle).as_deref(),
-            Some("floral-notepaper")
-        );
-        assert_eq!(
-            expected_process_name(&root.join("floral-notepaper")).as_deref(),
-            Some("floral-notepaper")
-        );
-    }
-
-    #[test]
-    #[cfg(not(target_os = "windows"))]
-    fn expected_process_name_falls_back_for_ambiguous_bundle() {
-        let root = temp_dir("helper-ambiguous-process-name");
-        let bundle = root.join("花笺.app");
-        let macos_dir = bundle.join("Contents").join("MacOS");
-        fs::create_dir_all(&macos_dir).expect("create macos dir");
-        fs::write(macos_dir.join("floral-notepaper"), b"binary").expect("write binary");
-        fs::write(macos_dir.join("helper"), b"binary").expect("write helper");
-
-        assert_eq!(expected_process_name(&bundle).as_deref(), Some("花笺"));
-    }
-
-    #[test]
     fn completion_marker_uses_ready_marker_stem() {
         let root = temp_dir("helper-completion-marker");
         let command = helper_command(&root);
@@ -3595,7 +2736,7 @@ mod tests {
         let root = temp_dir("helper-watchdog-relaunch-handoff");
         let mut command = helper_command(&root);
         command.mode = UpdateHelperMode::Watchdog;
-        command.target_path = root.join("missing-target.app");
+        command.target_path = root.join("missing-target.exe");
         let installing_state = UpdateStateDto {
             status: UpdateStatus::Installing,
             latest_version: Some(command.target_version.clone()),
@@ -3661,7 +2802,7 @@ mod tests {
         let mut command = helper_command(&root);
         command.mode = UpdateHelperMode::Watchdog;
         command.wait_pid = u32::MAX;
-        command.target_path = root.join("missing-target.app");
+        command.target_path = root.join("missing-target.exe");
         command.state_path = root.join("state-directory");
         fs::create_dir_all(&command.state_path).expect("create state path directory");
         let mut log = open_log(&command.log_path).expect("open log");
@@ -3683,7 +2824,7 @@ mod tests {
         command.mode = UpdateHelperMode::Apply;
         command.install_kind = InstallKind::Unknown;
         command.wait_pid = u32::MAX;
-        command.target_path = root.join("missing-target.app");
+        command.target_path = root.join("missing-target.exe");
         command.asset_path = asset_path.clone();
         command.asset_size = fs::metadata(&asset_path).expect("asset metadata").len();
         command.asset_sha256 = sha256_hex(&asset_path).expect("hash asset");
@@ -3720,27 +2861,6 @@ mod tests {
         cleanup_after_install(&command, &mut log).expect("cleanup ready marker");
 
         assert!(!command.ready_path.exists());
-    }
-
-    #[test]
-    fn cleanup_applied_update_retains_macos_rollback_stage() {
-        let root = temp_dir("helper-retain-rollback-stage");
-        let stage_root = root.join(".floral-notepaper-update-stage-test");
-        let backup_path = stage_root.join("backup.app");
-        fs::create_dir_all(&backup_path).expect("create rollback backup");
-        let applied_update = AppliedUpdate {
-            launch_target: root.join("target.app"),
-            rollback: Some(InstallRollbackPlan::Macos(MacosRollbackPlan {
-                target_path: root.join("target.app"),
-                backup_path,
-                stage_root: stage_root.clone(),
-            })),
-        };
-        let mut log = open_log(&root.join("cleanup.log")).expect("open log");
-
-        cleanup_applied_update(&applied_update, &mut log).expect("cleanup applied update");
-
-        assert!(stage_root.exists());
     }
 
     #[test]
@@ -3834,19 +2954,11 @@ mod tests {
 
     #[test]
     fn maps_disk_full_copy_errors_to_insufficient_space() {
-        #[cfg(target_os = "windows")]
         let error = std::io::Error::from_raw_os_error(112);
-        #[cfg(unix)]
-        let error = std::io::Error::from_raw_os_error(libc::ENOSPC);
-        #[cfg(not(any(unix, target_os = "windows")))]
-        let error = std::io::Error::other("disk full");
 
         let code = map_copy_error_code(&error, UpdateHelperExitCode::ReplacementFailed);
 
-        #[cfg(any(unix, target_os = "windows"))]
         assert_eq!(code, UpdateHelperExitCode::InsufficientSpace);
-        #[cfg(not(any(unix, target_os = "windows")))]
-        assert_eq!(code, UpdateHelperExitCode::ReplacementFailed);
     }
 
     #[test]
@@ -3948,54 +3060,6 @@ HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloralNot
             build_silent_windows_uninstall_command(&msi_record).as_deref(),
             Some(r#"msiexec.exe /x {ABCDEF12-3456-7890-ABCD-EF1234567890} /qn /norestart"#)
         );
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn mounted_dmg_selection_prefers_root_app_bundle() {
-        let root = temp_dir("helper-dmg-root-selection");
-        let mounted_root = root.join("mounted");
-        let fake_applications = root.join("Applications");
-        let root_bundle = mounted_root.join("花笺.app");
-        let stale_bundle = fake_applications
-            .join(".floral-notepaper-update-stage-123")
-            .join("花笺.app");
-
-        fs::create_dir_all(&root_bundle).expect("create root bundle");
-        fs::create_dir_all(&stale_bundle).expect("create stale bundle");
-        fs::create_dir_all(&mounted_root).expect("create mounted root");
-        symlink(&fake_applications, mounted_root.join("Applications")).expect("create symlink");
-
-        let mut log = temp_log(&root, "dmg-select.log");
-        let selected =
-            select_app_bundle_from_mounted_dmg(&mounted_root, Some("花笺.app"), &mut log)
-                .expect("select mounted bundle");
-
-        assert_eq!(selected, root_bundle);
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn bundle_search_skips_symlink_dirs_and_update_stage_dirs() {
-        let root = temp_dir("helper-find-bundles");
-        let extracted_root = root.join("unzipped");
-        let valid_bundle = extracted_root.join("Nested").join("花笺.app");
-        let stage_bundle = extracted_root
-            .join(".floral-notepaper-update-stage-123")
-            .join("花笺.app");
-        let symlink_target = root.join("linked");
-        let symlink_bundle = symlink_target.join("花笺.app");
-
-        fs::create_dir_all(valid_bundle.parent().expect("valid bundle parent"))
-            .expect("create nested dir");
-        fs::create_dir_all(&valid_bundle).expect("create valid bundle");
-        fs::create_dir_all(&stage_bundle).expect("create stage bundle");
-        fs::create_dir_all(&symlink_bundle).expect("create symlink bundle");
-        symlink(&symlink_target, extracted_root.join("Applications")).expect("create symlink dir");
-
-        let bundles = find_app_bundles(&extracted_root);
-
-        assert_eq!(bundles, vec![valid_bundle]);
     }
 
     #[test]

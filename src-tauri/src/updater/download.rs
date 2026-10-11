@@ -1037,7 +1037,6 @@ mod tests {
             app_id: super::super::APP_ID.into(),
             install_kind,
             current_exe: None,
-            current_app_bundle: None,
         }
     }
 
@@ -1185,9 +1184,9 @@ mod tests {
   "publishedAt": "2026-05-26T12:00:00Z",
   "assets": [
     {{
-      "os": "macos",
-      "arch": "aarch64",
-      "kind": "app_zip",
+      "os": "windows",
+      "arch": "x86_64",
+      "kind": "nsis",
       "name": "{asset_name}",
       "sha256": "{sha256}",
       "size": {size},
@@ -1204,9 +1203,9 @@ mod tests {
             github_manifest_path: Some(manifest_path),
             allow_insecure_localhost: false,
             platform_override: Some(test_platform(
-                Os::Macos,
-                Arch::Aarch64,
-                InstallKind::MacosAppBundle,
+                Os::Windows,
+                Arch::X86_64,
+                InstallKind::WindowsNsis,
             )),
         };
         let current_state = available_state(asset_name, body);
@@ -1251,9 +1250,9 @@ mod tests {
   "publishedAt": "2026-05-26T12:00:00Z",
   "assets": [
     {{
-      "os": "macos",
-      "arch": "aarch64",
-      "kind": "app_zip",
+      "os": "windows",
+      "arch": "x86_64",
+      "kind": "nsis",
       "name": "{asset_name}",
       "sha256": "{sha256}",
       "size": {size},
@@ -1271,9 +1270,9 @@ mod tests {
             github_manifest_path: Some(manifest_path),
             allow_insecure_localhost: false,
             platform_override: Some(test_platform(
-                Os::Macos,
-                Arch::Aarch64,
-                InstallKind::MacosAppBundle,
+                Os::Windows,
+                Arch::X86_64,
+                InstallKind::WindowsNsis,
             )),
         };
         let mut current_state = available_state(asset_name, body);
@@ -1294,8 +1293,8 @@ mod tests {
             github_manifest_path: None,
             allow_insecure_localhost: false,
             platform_override: Some(test_platform(
-                Os::Macos,
-                Arch::Aarch64,
+                Os::Windows,
+                Arch::X86_64,
                 InstallKind::Unknown,
             )),
         };

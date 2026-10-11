@@ -33,7 +33,7 @@ const status: UpdateState = {
   currentVersion: "1.0.4",
   latestVersion: "1.0.5",
   channel: "stable",
-  assetName: "floral-notepaper_1.0.5_macos_aarch64_app.zip",
+  assetName: "floral-notepaper_1.0.5_x64-setup.exe",
   assetPath: null,
   assetSha256: "abc",
   assetSize: 12345678,
@@ -179,7 +179,7 @@ describe("UpdateSettingsSection", () => {
       null,
       {
         version: "1.0.6",
-        assetName: "floral-notepaper_1.0.6_macos_aarch64_app.zip",
+        assetName: "floral-notepaper_1.0.6_x64-setup.exe",
         downloadedBytes: 1024,
         totalBytes: 2048,
         percent: 50,

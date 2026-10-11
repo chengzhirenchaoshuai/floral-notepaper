@@ -299,12 +299,6 @@ where
             ));
         }
 
-        if platform.install_kind == super::types::InstallKind::MacosAppBundle {
-            return resolve_macos_helper_source_path(platform).ok_or_else(|| {
-                build_helper_not_found_error(platform, "找不到更新安装助手可执行文件")
-            });
-        }
-
         platform
             .current_exe
             .as_ref()
@@ -384,9 +378,6 @@ fn spawn_helper_watchdog(request: &HelperLaunchRequest, helper_pid: u32) -> Resu
 
 fn resolve_install_target(platform: &PlatformInfo) -> Result<PathBuf, AppError> {
     match platform.install_kind {
-        super::types::InstallKind::MacosAppBundle => {
-            resolve_macos_bundle_path(platform).ok_or_else(errors::unsupported_platform)
-        }
         super::types::InstallKind::WindowsNsis => platform
             .current_exe
             .as_ref()
@@ -397,136 +388,11 @@ fn resolve_install_target(platform: &PlatformInfo) -> Result<PathBuf, AppError> 
     }
 }
 
-fn resolve_macos_bundle_path(platform: &PlatformInfo) -> Option<PathBuf> {
-    resolve_macos_bundle_path_in(platform, &macos_bundle_search_dirs())
-}
-
-fn resolve_macos_bundle_path_in(
-    platform: &PlatformInfo,
-    search_dirs: &[PathBuf],
-) -> Option<PathBuf> {
-    macos_bundle_candidates(platform, search_dirs)
-        .into_iter()
-        .find(|path| path.exists())
-}
-
-fn resolve_macos_helper_source_path(platform: &PlatformInfo) -> Option<PathBuf> {
-    resolve_macos_helper_source_path_in(platform, &macos_bundle_search_dirs())
-}
-
-fn resolve_macos_helper_source_path_in(
-    platform: &PlatformInfo,
-    search_dirs: &[PathBuf],
-) -> Option<PathBuf> {
-    for bundle in macos_bundle_candidates(platform, search_dirs) {
-        let helper_path = macos_helper_executable_path(&bundle);
-        if helper_path.exists() {
-            return Some(helper_path);
-        }
-    }
-    resolve_macos_bundle_path_in(platform, search_dirs)
-}
-
-fn macos_bundle_search_dirs() -> Vec<PathBuf> {
-    let mut dirs = vec![PathBuf::from("/Applications")];
-    if let Some(home_dir) = dirs::home_dir() {
-        dirs.push(home_dir.join("Applications"));
-    }
-    dirs
-}
-
-fn macos_bundle_candidates(platform: &PlatformInfo, search_dirs: &[PathBuf]) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Some(bundle) = platform.current_app_bundle.as_ref().map(PathBuf::from) {
-        push_unique_candidate(&mut candidates, bundle);
-    }
-
-    if let Some(bundle) = platform
-        .current_exe
-        .as_deref()
-        .map(Path::new)
-        .and_then(find_bundle_path_from_executable_path)
-    {
-        push_unique_candidate(&mut candidates, bundle);
-    }
-
-    if let Some(bundle_name) = current_bundle_name(platform) {
-        for search_dir in search_dirs {
-            push_unique_candidate(&mut candidates, search_dir.join(&bundle_name));
-        }
-    }
-
-    candidates
-}
-
-fn push_unique_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
-    if !candidates.iter().any(|existing| existing == &candidate) {
-        candidates.push(candidate);
-    }
-}
-
-fn current_bundle_name(platform: &PlatformInfo) -> Option<std::ffi::OsString> {
-    platform
-        .current_app_bundle
-        .as_deref()
-        .map(Path::new)
-        .and_then(Path::file_name)
-        .map(|value| value.to_os_string())
-        .or_else(|| {
-            platform
-                .current_exe
-                .as_deref()
-                .map(Path::new)
-                .and_then(find_bundle_path_from_executable_path)
-                .and_then(|path| path.file_name().map(|value| value.to_os_string()))
-        })
-}
-
-fn find_bundle_path_from_executable_path(executable_path: &Path) -> Option<PathBuf> {
-    platform::find_macos_app_bundle(executable_path)
-}
-
-fn build_helper_not_found_error(platform: &PlatformInfo, message: &str) -> AppError {
-    let attempted_paths = macos_bundle_candidates(platform, &macos_bundle_search_dirs())
-        .into_iter()
-        .flat_map(|bundle_path| {
-            [
-                macos_helper_executable_path(&bundle_path)
-                    .display()
-                    .to_string(),
-                bundle_path.display().to_string(),
-            ]
-        })
-        .collect::<Vec<_>>()
-        .join(" | ");
-    let mut error = errors::app_error("updateHelperNotFound", message);
-    if !attempted_paths.is_empty() {
-        error = errors::with_detail(error, "attemptedPaths", attempted_paths);
-    }
-    error
-}
-
-fn macos_helper_executable_path(bundle_path: &Path) -> PathBuf {
-    bundle_path
-        .join("Contents")
-        .join("MacOS")
-        .join(helper::HELPER_BINARY_NAME)
-}
-
 fn stage_helper_copy(
     paths: &UpdatePaths,
     platform: &PlatformInfo,
     source_path: &Path,
 ) -> Result<PathBuf, AppError> {
-    if platform.install_kind == super::types::InstallKind::MacosAppBundle
-        && source_path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
-    {
-        return stage_helper_bundle_copy(platform, source_path, paths);
-    }
     if platform.install_kind == super::types::InstallKind::WindowsNsis {
         return stage_windows_helper_copy(paths, source_path);
     }
@@ -601,58 +467,6 @@ fn is_windows_runtime_dependency(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
-}
-
-fn stage_helper_bundle_copy(
-    platform: &PlatformInfo,
-    source_bundle: &Path,
-    paths: &UpdatePaths,
-) -> Result<PathBuf, AppError> {
-    let staged_bundle = unique_helper_path(paths, Some("app"));
-    Command::new("/usr/bin/ditto")
-        .arg(source_bundle)
-        .arg(&staged_bundle)
-        .status()
-        .map_err(|error| {
-            errors::with_detail(
-                errors::app_error(
-                    "updateInstallSpawnFailed",
-                    format!("准备更新安装助手失败：{error}"),
-                ),
-                "helperSourcePath",
-                source_bundle.display().to_string(),
-            )
-        })
-        .and_then(|status| {
-            if status.success() {
-                Ok(())
-            } else {
-                Err(errors::app_error(
-                    "updateInstallSpawnFailed",
-                    "复制更新安装助手应用包失败",
-                ))
-            }
-        })?;
-
-    let executable_name = platform
-        .current_exe
-        .as_deref()
-        .and_then(|file| Path::new(file).file_name())
-        .and_then(|name| name.to_str())
-        .unwrap_or(helper::HELPER_BINARY_NAME);
-    let executable_path = staged_bundle
-        .join("Contents")
-        .join("MacOS")
-        .join(executable_name);
-    if executable_path.exists() {
-        Ok(executable_path)
-    } else {
-        Err(errors::with_detail(
-            errors::app_error("updateInstallSpawnFailed", "复制后的更新安装助手不可执行"),
-            "helperPath",
-            executable_path.display().to_string(),
-        ))
-    }
 }
 
 fn unique_helper_path(paths: &UpdatePaths, extension: Option<&str>) -> PathBuf {
@@ -949,35 +763,27 @@ mod tests {
         }
     }
 
-    fn platform_with_bundle(bundle: &Path) -> PlatformInfo {
+    fn windows_platform(install_dir: &Path) -> PlatformInfo {
         PlatformInfo {
-            os: platform::Os::Macos,
+            os: platform::Os::Windows,
             arch: platform::Arch::Aarch64,
             app_version: "1.0.3".into(),
             app_id: super::super::APP_ID.into(),
-            install_kind: super::super::types::InstallKind::MacosAppBundle,
+            install_kind: super::super::types::InstallKind::WindowsNsis,
             current_exe: Some(
-                bundle
-                    .join("Contents")
-                    .join("MacOS")
-                    .join("floral-notepaper")
+                install_dir
+                    .join("floral-notepaper.exe")
                     .to_string_lossy()
                     .to_string(),
             ),
-            current_app_bundle: Some(bundle.to_string_lossy().to_string()),
         }
     }
 
-    fn write_bundle_with_helper(bundle: &Path) {
-        let app_binary = bundle
-            .join("Contents")
-            .join("MacOS")
-            .join("floral-notepaper");
-        let helper_binary = bundle
-            .join("Contents")
-            .join("MacOS")
-            .join(helper::HELPER_BINARY_NAME);
-        fs::create_dir_all(app_binary.parent().expect("app binary parent")).expect("create bundle");
+    fn write_app_with_helper(install_dir: &Path) {
+        let app_binary = install_dir.join("floral-notepaper.exe");
+        let helper_binary = install_dir.join(helper::HELPER_BINARY_NAME);
+        fs::create_dir_all(app_binary.parent().expect("app binary parent"))
+            .expect("create install_dir");
         fs::write(&app_binary, b"main app placeholder").expect("write app placeholder");
         fs::write(&helper_binary, b"helper placeholder").expect("write helper placeholder");
     }
@@ -986,19 +792,16 @@ mod tests {
     fn launches_real_install_helper_after_staging_copy() {
         let paths = test_paths("install-success");
         paths.ensure_dirs().expect("ensure dirs");
-        let bundle = paths.root_dir().join("Floral Notepaper.app");
-        write_bundle_with_helper(&bundle);
-        let app_binary = bundle
-            .join("Contents")
-            .join("MacOS")
-            .join("floral-notepaper");
+        let install_dir = paths.root_dir().join("Floral Notepaper");
+        write_app_with_helper(&install_dir);
+        let app_binary = install_dir.join("floral-notepaper.exe");
 
         let executor = FakeExecutor::new(FakeExecutorResult::Success);
         let service = UpdateInstallService::with_executor(
             executor.clone(),
             helper::UpdateHelperMode::Apply,
             Some(app_binary.clone()),
-            Some(platform_with_bundle(&bundle)),
+            Some(windows_platform(&install_dir)),
         );
         let state = downloaded_state(&paths);
 
@@ -1018,7 +821,7 @@ mod tests {
         assert_eq!(calls[0].command.mode, helper::UpdateHelperMode::Apply);
         assert_eq!(
             calls[0].command.install_kind,
-            super::super::types::InstallKind::MacosAppBundle
+            super::super::types::InstallKind::WindowsNsis
         );
         assert_eq!(calls[0].command.state_path, paths.state_path());
         assert!(calls[0].command.ready_path.starts_with(paths.staging_dir()));
@@ -1030,19 +833,16 @@ mod tests {
     fn test_mode_keeps_downloaded_state_after_validation() {
         let paths = test_paths("install-test-mode");
         paths.ensure_dirs().expect("ensure dirs");
-        let bundle = paths.root_dir().join("Floral Notepaper.app");
-        write_bundle_with_helper(&bundle);
-        let app_binary = bundle
-            .join("Contents")
-            .join("MacOS")
-            .join("floral-notepaper");
+        let install_dir = paths.root_dir().join("Floral Notepaper");
+        write_app_with_helper(&install_dir);
+        let app_binary = install_dir.join("floral-notepaper.exe");
 
         let executor = FakeExecutor::new(FakeExecutorResult::Success);
         let service = UpdateInstallService::with_executor(
             executor.clone(),
             helper::UpdateHelperMode::Test,
             Some(app_binary),
-            Some(platform_with_bundle(&bundle)),
+            Some(windows_platform(&install_dir)),
         );
 
         let result = service
@@ -1055,33 +855,6 @@ mod tests {
         assert_eq!(saved.status, UpdateStatus::Downloaded);
         assert_eq!(saved.install_mode, Some(UpdateInstallMode::Test));
         assert!(saved.install_scheduled_at.is_none());
-    }
-
-    #[test]
-    fn resolves_macos_helper_and_target_from_fallback_search_dir() {
-        let paths = test_paths("install-macos-fallback-bundle");
-        let fallback_dir = paths.root_dir().join("Applications");
-        let actual_bundle = fallback_dir.join("花笺.app");
-        write_bundle_with_helper(&actual_bundle);
-
-        let stale_bundle = paths.root_dir().join("gone").join("花笺.app");
-        let platform = platform_with_bundle(&stale_bundle);
-
-        let resolved_bundle =
-            resolve_macos_bundle_path_in(&platform, std::slice::from_ref(&fallback_dir))
-                .expect("resolve fallback bundle");
-        let resolved_helper =
-            resolve_macos_helper_source_path_in(&platform, std::slice::from_ref(&fallback_dir))
-                .expect("resolve fallback helper");
-
-        assert_eq!(resolved_bundle, actual_bundle);
-        assert_eq!(
-            resolved_helper,
-            actual_bundle
-                .join("Contents")
-                .join("MacOS")
-                .join(helper::HELPER_BINARY_NAME)
-        );
     }
 
     #[test]
@@ -1106,13 +879,13 @@ mod tests {
     fn helper_source_override_must_exist() {
         let paths = test_paths("install-helper-missing");
         let executor = FakeExecutor::new(FakeExecutorResult::Success);
-        let bundle = paths.root_dir().join("Floral Notepaper.app");
-        fs::create_dir_all(bundle.join("Contents").join("MacOS")).expect("create bundle");
+        let install_dir = paths.root_dir().join("Floral Notepaper");
+        fs::create_dir_all(install_dir.clone()).expect("create install_dir");
         let service = UpdateInstallService::with_executor(
             executor,
             helper::UpdateHelperMode::Apply,
             Some(paths.root_dir().join("missing-helper")),
-            Some(platform_with_bundle(&bundle)),
+            Some(windows_platform(&install_dir)),
         );
 
         let error = service
@@ -1126,12 +899,9 @@ mod tests {
     fn preserves_spawn_failures_as_failed_state() {
         let paths = test_paths("install-spawn-failure");
         paths.ensure_dirs().expect("ensure dirs");
-        let bundle = paths.root_dir().join("Floral Notepaper.app");
-        write_bundle_with_helper(&bundle);
-        let app_binary = bundle
-            .join("Contents")
-            .join("MacOS")
-            .join("floral-notepaper");
+        let install_dir = paths.root_dir().join("Floral Notepaper");
+        write_app_with_helper(&install_dir);
+        let app_binary = install_dir.join("floral-notepaper.exe");
         let executor = FakeExecutor::new(FakeExecutorResult::Error(errors::app_error(
             "updateInstallSpawnFailed",
             "启动更新安装助手失败：boom",
@@ -1140,7 +910,7 @@ mod tests {
             executor,
             helper::UpdateHelperMode::Apply,
             Some(app_binary),
-            Some(platform_with_bundle(&bundle)),
+            Some(windows_platform(&install_dir)),
         );
 
         let error = service
@@ -1156,18 +926,15 @@ mod tests {
     fn surfaces_helper_failure_written_before_handoff_completes() {
         let paths = test_paths("install-helper-prehandoff-failure");
         paths.ensure_dirs().expect("ensure dirs");
-        let bundle = paths.root_dir().join("Floral Notepaper.app");
-        write_bundle_with_helper(&bundle);
-        let app_binary = bundle
-            .join("Contents")
-            .join("MacOS")
-            .join("floral-notepaper");
+        let install_dir = paths.root_dir().join("Floral Notepaper");
+        write_app_with_helper(&install_dir);
+        let app_binary = install_dir.join("floral-notepaper.exe");
         let executor = FakeExecutor::new(FakeExecutorResult::PersistFailedStateThenSuccess);
         let service = UpdateInstallService::with_executor(
             executor,
             helper::UpdateHelperMode::Apply,
             Some(app_binary),
-            Some(platform_with_bundle(&bundle)),
+            Some(windows_platform(&install_dir)),
         );
 
         let error = service
@@ -1199,7 +966,6 @@ mod tests {
                 app_id: super::super::APP_ID.into(),
                 install_kind: super::super::types::InstallKind::Unknown,
                 current_exe: Some(source.to_string_lossy().to_string()),
-                current_app_bundle: None,
             },
             &source,
         )
@@ -1234,7 +1000,6 @@ mod tests {
                 app_id: super::super::APP_ID.into(),
                 install_kind: super::super::types::InstallKind::WindowsNsis,
                 current_exe: Some(source.to_string_lossy().to_string()),
-                current_app_bundle: None,
             },
             &source,
         )

@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 pub enum ManifestAssetKind {
     Nsis,
     PortableExe,
-    AppZip,
 }
 
 impl ManifestAssetKind {
@@ -21,7 +20,6 @@ impl ManifestAssetKind {
         match (os, install_kind) {
             (Os::Windows, InstallKind::WindowsNsis) => Ok(Self::Nsis),
             (Os::Windows, InstallKind::WindowsPortable) => Ok(Self::PortableExe),
-            (Os::Macos, InstallKind::MacosAppBundle) => Ok(Self::AppZip),
             _ => Err(errors::unsupported_platform()),
         }
     }
@@ -199,7 +197,6 @@ mod tests {
             app_id: APP_ID.into(),
             install_kind,
             current_exe: None,
-            current_app_bundle: None,
         }
     }
 
@@ -210,7 +207,7 @@ mod tests {
         assert_eq!(manifest.schema_version, 1);
         assert_eq!(manifest.app_id, APP_ID);
         assert_eq!(manifest.version, "1.0.5");
-        assert_eq!(manifest.assets.len(), 4);
+        assert_eq!(manifest.assets.len(), 2);
     }
 
     #[test]
@@ -225,9 +222,9 @@ mod tests {
           "publishedAt": "2026-05-26T12:00:00Z",
           "assets": [
             {
-              "os": "macos",
-              "arch": "aarch64",
-              "kind": "app_zip",
+              "os": "windows",
+              "arch": "x86_64",
+              "kind": "nsis",
               "name": "asset.zip",
               "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
               "size": 1,
@@ -271,24 +268,11 @@ mod tests {
     }
 
     #[test]
-    fn selects_macos_aarch64_asset() {
-        let manifest = parse_manifest(VALID_MANIFEST_BYTES).expect("parse valid manifest");
-        let asset = select_asset(
-            &manifest,
-            &platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
-            InstallKind::MacosAppBundle,
-        )
-        .expect("select macos asset");
-
-        assert_eq!(asset.name, "floral-notepaper_1.0.5_macos_aarch64_app.zip");
-    }
-
-    #[test]
     fn rejects_unknown_install_kind_during_asset_selection() {
         let manifest = parse_manifest(VALID_MANIFEST_BYTES).expect("parse valid manifest");
         let error = select_asset(
             &manifest,
-            &platform(Os::Macos, Arch::Aarch64, InstallKind::Unknown),
+            &platform(Os::Windows, Arch::X86_64, InstallKind::Unknown),
             InstallKind::Unknown,
         )
         .expect_err("unknown install kind must fail");

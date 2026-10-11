@@ -208,7 +208,6 @@ impl UpdaterState {
             state::recover_with_current_version(&self.paths, &self.current_version)?;
         download::cleanup_partial_downloads(&self.paths)?;
         cleanup_update_artifacts(&self.paths, &recovered_state)?;
-        helper::cleanup_stale_macos_mounts(&self.paths);
         Ok(())
     }
 
