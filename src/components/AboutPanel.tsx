@@ -3,7 +3,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { UpdateSettingsSection } from "../features/update/UpdateSettingsSection";
-import contributorsData from "../generated/contributors.json";
+// 贡献者为上游仓库的静态名单（2026-10-11 从 GitHub API 获取），不再在构建时联网拉取
+import contributorsData from "../data/contributors.json";
 import { getTips, parseTip } from "../locales/tips";
 
 interface Contributor {

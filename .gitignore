@@ -36,9 +36,6 @@ Desktop.ini
 *.ai
 *.icon
 
-## 生成文件
-src/generated/contributors.json
-
 ## 临时文件
 temp/
 nul

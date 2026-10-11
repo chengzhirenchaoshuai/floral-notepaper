@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-vi.mock("../generated/contributors.json", () => ({
+vi.mock("../data/contributors.json", () => ({
   default: [
     {
       login: "TestUser",
