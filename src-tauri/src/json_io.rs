@@ -35,15 +35,6 @@ fn temporary_json_path(path: &Path) -> PathBuf {
     path.with_file_name(format!("{file_name}.tmp"))
 }
 
-#[cfg(not(target_os = "windows"))]
-fn sync_parent_dir(path: &Path) -> Result<(), AppError> {
-    if let Some(parent) = path.parent() {
-        fs::File::open(parent)?.sync_all()?;
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
 fn sync_parent_dir(_path: &Path) -> Result<(), AppError> {
     Ok(())
 }

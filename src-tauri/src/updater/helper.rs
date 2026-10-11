@@ -17,11 +17,6 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(all(test, not(target_os = "windows")))]
-fn normalize_windows_path(value: &str) -> String {
-    value.replace('/', "\\").to_ascii_lowercase()
-}
-
 pub const HELPER_BINARY_NAME: &str = "floral-notepaper-update-helper.exe";
 
 // Give the GUI process enough time to flush notes, WebView state, and filesystem buffers before
@@ -1249,7 +1244,6 @@ fn fixed_file_version_text(ms: u32, ls: u32) -> String {
     format!("{major}.{minor}.{patch}.{build}")
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn installed_version_matches_target(actual_version: &str, target_version: &str) -> bool {
     let Some(actual) = numeric_version_prefix(actual_version) else {
         return false;
@@ -1267,7 +1261,6 @@ fn installed_version_matches_target(actual_version: &str, target_version: &str) 
         .all(|(index, expected)| actual.get(index).copied().unwrap_or_default().eq(expected))
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn numeric_version_prefix(version: &str) -> Option<Vec<u64>> {
     let mut components = Vec::new();
     let normalized = version.trim().trim_start_matches(['v', 'V']);
@@ -1449,7 +1442,6 @@ fn query_windows_install_registry_record(
         })
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn parse_windows_install_registry_key_from_search_output(
     output: &str,
     exe_name: &str,
@@ -1461,7 +1453,6 @@ fn parse_windows_install_registry_key_from_search_output(
         .map(|entry| entry.key_path)
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn parse_windows_install_registry_record_output(
     output: &str,
     exe_name: &str,
@@ -1502,7 +1493,6 @@ fn parse_windows_install_registry_record_output(
     registry_record_matches_installation(&record, expected_target_path).then_some(record)
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn parse_windows_registry_entries(output: &str) -> Vec<WindowsRegistryEntry> {
     let mut entries = Vec::new();
     let mut current_key = None::<String>;
@@ -1539,7 +1529,6 @@ fn parse_windows_registry_entries(output: &str) -> Vec<WindowsRegistryEntry> {
     entries
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn registry_entry_matches_installation(
     entry: &WindowsRegistryEntry,
     exe_name: &str,
@@ -1569,7 +1558,6 @@ fn registry_entry_matches_installation(
     registry_record_matches_installation(&record, expected_target_path)
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn registry_record_matches_installation(
     record: &WindowsRegistryInstallRecord,
     expected_target_path: Option<&Path>,
@@ -1596,7 +1584,6 @@ fn registry_record_matches_installation(
     })
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn registry_value_entry_from_line(line: &str) -> Option<(String, String)> {
     let (name, value) = line
         .split_once("REG_EXPAND_SZ")
@@ -1611,7 +1598,6 @@ fn registry_value_entry_from_line(line: &str) -> Option<(String, String)> {
     Some((name, expand_windows_env_vars(value)))
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn registry_candidate_launch_target(value: &str, exe_name: &str) -> Option<PathBuf> {
     let candidate = registry_path_text_candidate(value);
     if windows_path_basename(&candidate).is_some_and(|name| name.eq_ignore_ascii_case(exe_name)) {
@@ -1623,7 +1609,6 @@ fn registry_candidate_launch_target(value: &str, exe_name: &str) -> Option<PathB
     None
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn registry_candidate_install_dir(value: &str, exe_name: &str) -> Option<PathBuf> {
     let candidate = registry_path_text_candidate(value);
     if windows_path_basename(&candidate).is_some_and(|name| name.eq_ignore_ascii_case(exe_name)) {
@@ -1632,7 +1617,6 @@ fn registry_candidate_install_dir(value: &str, exe_name: &str) -> Option<PathBuf
     Some(PathBuf::from(candidate))
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn registry_path_text_candidate(value: &str) -> String {
     let normalized = value.trim().trim_matches('"');
     let lower = normalized.to_ascii_lowercase();
@@ -1644,7 +1628,6 @@ fn registry_path_text_candidate(value: &str) -> String {
     trimmed.trim_matches('"').to_string()
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn windows_path_basename(value: &str) -> Option<&str> {
     value
         .trim_end_matches(['\\', '/'])
@@ -1653,14 +1636,12 @@ fn windows_path_basename(value: &str) -> Option<&str> {
         .filter(|segment| !segment.is_empty())
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn windows_path_dirname(value: &str) -> Option<String> {
     let trimmed = value.trim_end_matches(['\\', '/']);
     let index = trimmed.rfind(['\\', '/'])?;
     Some(trimmed[..index].to_string())
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn windows_join_path(dir: &str, file_name: &str) -> String {
     let trimmed = dir.trim_end_matches(['\\', '/']);
     if trimmed.is_empty() {
@@ -1670,7 +1651,6 @@ fn windows_join_path(dir: &str, file_name: &str) -> String {
     }
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn expand_windows_env_vars(value: &str) -> String {
     let mut expanded = String::with_capacity(value.len());
     let mut rest = value;
@@ -1696,7 +1676,6 @@ fn expand_windows_env_vars(value: &str) -> String {
     expanded
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn build_silent_windows_uninstall_command(record: &WindowsRegistryInstallRecord) -> Option<String> {
     let quiet_command = record
         .quiet_uninstall_command
@@ -1731,7 +1710,6 @@ fn build_silent_windows_uninstall_command(record: &WindowsRegistryInstallRecord)
     Some(format!("{command} /S"))
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn extract_windows_msi_product_code(command: &str) -> Option<&str> {
     let start = command.find('{')?;
     let rest = &command[start..];
@@ -1743,7 +1721,6 @@ fn extract_windows_msi_product_code(command: &str) -> Option<&str> {
         .then_some(product_code)
 }
 
-#[cfg(any(target_os = "windows", test))]
 fn contains_windows_command_flag(command: &str, flag: &str) -> bool {
     command
         .split_whitespace()

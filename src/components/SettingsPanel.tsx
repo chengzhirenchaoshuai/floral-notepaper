@@ -18,7 +18,6 @@ import {
   formatHeldKeys,
   hotkeyToConfigString,
   isValidGlobalShortcut,
-  shortcutPlatform,
 } from "../features/settings/shortcutRecorder";
 import { useShortcutRecorder } from "../features/settings/useShortcutRecorder";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
@@ -976,7 +975,6 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   });
   const shortcutCheckRequestId = useRef(0);
   const isMounted = useRef(true);
-  const platform = shortcutPlatform();
 
   const resolveMsg = (msg: ShortcutMsg): string =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1046,7 +1044,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
         onChange("");
         markShortcutCleared();
       } else if (isValidGlobalShortcut(shortcut)) {
-        const configString = hotkeyToConfigString(shortcut, platform);
+        const configString = hotkeyToConfigString(shortcut);
         void runShortcutCheck(configString, true);
       } else {
         invalidateShortcutChecks();
@@ -1076,9 +1074,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   }, [recorder.isRecording, recorder.cancelRecording]);
 
   const liveDisplay =
-    recorder.isRecording && recorder.heldKeys.length > 0
-      ? formatHeldKeys(recorder.heldKeys, platform)
-      : null;
+    recorder.isRecording && recorder.heldKeys.length > 0 ? formatHeldKeys(recorder.heldKeys) : null;
   const statusClass =
     checkState === "ok"
       ? "text-bamboo"

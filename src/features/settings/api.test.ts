@@ -109,7 +109,7 @@ describe("settings api", () => {
     const result = {
       available: false,
       conflictType: "system",
-      message: "与 macOS 系统快捷键冲突",
+      message: "与系统快捷键冲突",
     };
     mockedInvoke.mockResolvedValue(result);
 

@@ -3,8 +3,6 @@ use crate::{
     services::notes::{default_store, AppConfig, AppError},
 };
 use serde::{Deserialize, Serialize};
-#[cfg(target_os = "macos")]
-use std::sync::OnceLock;
 use std::{
     error::Error,
     sync::{
@@ -13,7 +11,6 @@ use std::{
     },
 };
 
-#[cfg(target_os = "windows")]
 mod keyboard_hook {
     use serde::Serialize;
     use std::sync::{
@@ -407,19 +404,12 @@ use tauri::{
 };
 use uuid::Uuid;
 
-#[cfg(target_os = "macos")]
-use tauri::menu::Submenu;
-
-#[cfg(desktop)]
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
-#[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const MAIN_WINDOW_MIN_WIDTH: u32 = 900;
 const MAIN_WINDOW_MIN_HEIGHT: u32 = 620;
-const OPEN_ABOUT_PANEL_EVENT: &str = "open-about-panel";
-const MACOS_APP_ABOUT_ID: &str = "macos-about";
 const TRAY_ID: &str = "main-tray";
 const TRAY_SHOW_MAIN_ID: &str = "show-main";
 const TRAY_QUICK_NOTE_ID: &str = "quick-note";
@@ -427,8 +417,6 @@ const TRAY_TOGGLE_CLOSE_TO_TRAY_ID: &str = "toggle-close-to-tray";
 const TRAY_TOGGLE_AUTOSTART_ID: &str = "toggle-autostart";
 const TRAY_QUIT_ID: &str = "quit";
 
-#[cfg(target_os = "macos")]
-static FULLSCREEN_HIDING: AtomicBool = AtomicBool::new(false);
 const NOTEPAD_POOL_CAPACITY: usize = 2;
 
 /// Stores the file path passed as a command-line argument on cold start.
@@ -444,11 +432,6 @@ pub enum TrayMenuAction {
     ToggleCloseToTray,
     ToggleAutostart,
     Quit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AppMenuAction {
-    ShowAboutPanel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -549,18 +532,15 @@ struct RuntimeState {
     is_exiting: AtomicBool,
     windows_hidden: AtomicBool,
     hidden_window_labels: Mutex<Vec<String>>,
-    #[cfg(desktop)]
     shortcut_bindings: Mutex<ShortcutBindings>,
 }
 
-#[cfg(desktop)]
 #[derive(Clone, Default)]
 struct ShortcutBindings {
     open_notepad: Option<Shortcut>,
     toggle_visibility: Option<Shortcut>,
 }
 
-#[cfg(desktop)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShortcutAction {
     OpenNotepad,
@@ -646,14 +626,12 @@ impl RuntimeState {
         }
     }
 
-    #[cfg(desktop)]
     fn set_shortcut_bindings(&self, bindings: ShortcutBindings) {
         if let Ok(mut guard) = self.shortcut_bindings.lock() {
             *guard = bindings;
         }
     }
 
-    #[cfg(desktop)]
     fn shortcut_action(&self, shortcut: &Shortcut) -> ShortcutAction {
         self.shortcut_bindings
             .lock()
@@ -663,7 +641,6 @@ impl RuntimeState {
     }
 }
 
-#[cfg(desktop)]
 impl ShortcutBindings {
     fn action_for(&self, shortcut: &Shortcut) -> Option<ShortcutAction> {
         if self
@@ -687,13 +664,6 @@ pub fn tray_menu_action(id: &str) -> Option<TrayMenuAction> {
         TRAY_TOGGLE_CLOSE_TO_TRAY_ID => Some(TrayMenuAction::ToggleCloseToTray),
         TRAY_TOGGLE_AUTOSTART_ID => Some(TrayMenuAction::ToggleAutostart),
         TRAY_QUIT_ID => Some(TrayMenuAction::Quit),
-        _ => None,
-    }
-}
-
-fn app_menu_action(id: &str) -> Option<AppMenuAction> {
-    match id {
-        MACOS_APP_ABOUT_ID => Some(AppMenuAction::ShowAboutPanel),
         _ => None,
     }
 }
@@ -777,118 +747,6 @@ fn build_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<Menu<Wry>, Box
     )?)
 }
 
-#[cfg(target_os = "macos")]
-fn build_app_menu(app: &AppHandle, config: &AppConfig) -> Result<Menu<Wry>, Box<dyn Error>> {
-    let locale = locale_from_config(config);
-
-    let about = MenuItem::with_id(
-        app,
-        MACOS_APP_ABOUT_ID,
-        locales::macos_menu_about_label(locale),
-        true,
-        None::<&str>,
-    )?;
-    let services =
-        PredefinedMenuItem::services(app, Some(locales::macos_menu_services_label(locale)))?;
-    let hide = PredefinedMenuItem::hide(app, Some(&locales::macos_menu_hide_app_label(locale)))?;
-    let hide_others =
-        PredefinedMenuItem::hide_others(app, Some(locales::macos_menu_hide_others_label(locale)))?;
-    let quit = PredefinedMenuItem::quit(app, Some(&locales::macos_menu_quit_app_label(locale)))?;
-    let file_close_window = PredefinedMenuItem::close_window(
-        app,
-        Some(locales::macos_menu_close_window_label(locale)),
-    )?;
-    let window_close_window = PredefinedMenuItem::close_window(
-        app,
-        Some(locales::macos_menu_close_window_label(locale)),
-    )?;
-    let undo = PredefinedMenuItem::undo(app, Some(locales::macos_menu_undo_label(locale)))?;
-    let redo = PredefinedMenuItem::redo(app, Some(locales::macos_menu_redo_label(locale)))?;
-    let cut = PredefinedMenuItem::cut(app, Some(locales::macos_menu_cut_label(locale)))?;
-    let copy = PredefinedMenuItem::copy(app, Some(locales::macos_menu_copy_label(locale)))?;
-    let paste = PredefinedMenuItem::paste(app, Some(locales::macos_menu_paste_label(locale)))?;
-    let select_all =
-        PredefinedMenuItem::select_all(app, Some(locales::macos_menu_select_all_label(locale)))?;
-    let fullscreen =
-        PredefinedMenuItem::fullscreen(app, Some(locales::macos_menu_fullscreen_label(locale)))?;
-    let minimize =
-        PredefinedMenuItem::minimize(app, Some(locales::macos_menu_minimize_label(locale)))?;
-    let zoom = PredefinedMenuItem::maximize(app, Some(locales::macos_menu_zoom_label(locale)))?;
-    let separator = PredefinedMenuItem::separator(app)?;
-
-    let app_menu = Submenu::with_items(
-        app,
-        locales::app_name(locale),
-        true,
-        &[
-            &about,
-            &PredefinedMenuItem::separator(app)?,
-            &services,
-            &PredefinedMenuItem::separator(app)?,
-            &hide,
-            &hide_others,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )?;
-    let file_menu = Submenu::with_items(
-        app,
-        locales::macos_menu_file_label(locale),
-        true,
-        &[&file_close_window],
-    )?;
-    let edit_menu = Submenu::with_items(
-        app,
-        locales::macos_menu_edit_label(locale),
-        true,
-        &[&undo, &redo, &separator, &cut, &copy, &paste, &select_all],
-    )?;
-    let view_menu = Submenu::with_items(
-        app,
-        locales::macos_menu_view_label(locale),
-        true,
-        &[&fullscreen],
-    )?;
-    let window_menu = Submenu::with_items(
-        app,
-        locales::macos_menu_window_label(locale),
-        true,
-        &[
-            &minimize,
-            &zoom,
-            &PredefinedMenuItem::separator(app)?,
-            &window_close_window,
-        ],
-    )?;
-    let help_menu = Submenu::new(app, locales::macos_menu_help_label(locale), true)?;
-
-    let menu = Menu::with_items(
-        app,
-        &[
-            &app_menu,
-            &file_menu,
-            &edit_menu,
-            &view_menu,
-            &window_menu,
-            &help_menu,
-        ],
-    )?;
-
-    Ok(menu)
-}
-
-#[cfg(target_os = "macos")]
-fn refresh_app_menu(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
-    let menu = build_app_menu(app, config)?;
-    let _ = app.set_menu(menu)?;
-    Ok(())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn refresh_app_menu(_app: &AppHandle, _config: &AppConfig) -> Result<(), Box<dyn Error>> {
-    Ok(())
-}
-
 fn refresh_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return Ok(());
@@ -920,7 +778,6 @@ fn refresh_window_titles(app: &AppHandle, config: &AppConfig) -> Result<(), AppE
 
 pub fn refresh_shell_state(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
     refresh_window_titles(app, config)?;
-    refresh_app_menu(app, config)?;
     refresh_tray_menu(app, config)?;
     Ok(())
 }
@@ -1140,16 +997,10 @@ pub fn take_startup_file() -> Option<String> {
 pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     app.manage(RuntimeState::default());
     app.manage(NotepadPool::default());
-    app.on_menu_event(|app, event| {
-        if let Err(error) = handle_app_menu_event(app, event.id.as_ref()) {
-            eprintln!("failed to handle app menu event {:?}: {error}", event.id);
-        }
-    });
     setup_autostart_plugin(app.handle())?;
     setup_global_shortcut_plugin(app.handle())?;
     sync_autostart_to_config(app.handle());
     register_configured_global_shortcut(app.handle());
-    setup_app_menu(app)?;
     setup_tray(app)?;
     schedule_notepad_prewarm(app.handle());
 
@@ -1205,11 +1056,6 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         MainWindowCloseAction::AllowClose => {}
         MainWindowCloseAction::HideToTray => {
             api.prevent_close();
-            #[cfg(target_os = "macos")]
-            if window.is_fullscreen().unwrap_or(false) {
-                hide_fullscreen_window(window);
-                return;
-            }
             if let Err(error) = window.hide() {
                 eprintln!("failed to hide main window to tray: {error}");
             }
@@ -1222,66 +1068,6 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
     }
 }
 
-/// Exit fullscreen and hide the window once the fullscreen exit animation completes.
-#[cfg(target_os = "macos")]
-fn hide_fullscreen_window(window: &Window) {
-    use block2::RcBlock;
-    use objc2_app_kit::NSView;
-    use objc2_foundation::{NSNotificationCenter, NSString};
-    use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
-    use std::rc::Rc;
-
-    let Ok(handle) = window.window_handle() else {
-        let _ = window.hide();
-        return;
-    };
-    let RawWindowHandle::AppKit(app_kit) = handle.as_raw() else {
-        let _ = window.hide();
-        return;
-    };
-
-    // SAFETY: ns_view is a valid pointer from the window handle, on the main thread.
-    let ns_view: objc2::rc::Retained<NSView> =
-        unsafe { objc2::rc::Retained::retain(app_kit.ns_view.as_ptr().cast()) }
-            .expect("failed to retain NSView");
-    let Some(ns_window) = ns_view.window() else {
-        let _ = window.hide();
-        return;
-    };
-
-    let retained = window.app_handle().clone();
-    let label = window.label().to_string();
-    let observer_holder: Rc<OnceLock<objc2::rc::Retained<objc2::runtime::AnyObject>>> =
-        Rc::new(OnceLock::new());
-    let observer_ref = Rc::clone(&observer_holder);
-    let block = RcBlock::new(move |_notification: std::ptr::NonNull<_>| {
-        if FULLSCREEN_HIDING.swap(false, Ordering::SeqCst) {
-            if let Some(w) = retained.get_webview_window(&label) {
-                let _ = w.hide();
-            }
-        }
-        if let Some(obs) = observer_ref.get() {
-            unsafe {
-                NSNotificationCenter::defaultCenter().removeObserver(obs);
-            }
-        }
-    });
-    let name = NSString::from_str("NSWindowDidExitFullScreenNotification");
-    let observer = unsafe {
-        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
-            Some(&name),
-            Some(&ns_window),
-            None,
-            &block,
-        )
-    };
-    let _ = observer_holder.set(observer.into());
-
-    FULLSCREEN_HIDING.store(true, Ordering::SeqCst);
-    let _ = window.set_fullscreen(false);
-}
-
-#[cfg(target_os = "windows")]
 pub fn system_font_families() -> Vec<String> {
     use std::collections::BTreeSet;
     use std::ffi::OsString;
@@ -1338,12 +1124,6 @@ pub fn system_font_families() -> Vec<String> {
     fonts
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn system_font_families() -> Vec<String> {
-    fallback_font_families()
-}
-
-#[cfg(target_os = "windows")]
 fn normalize_windows_font_name(value: &str) -> Option<String> {
     let family = value
         .replace("(TrueType)", "")
@@ -1395,7 +1175,7 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
         )
         .tooltip(locales::tray_tooltip(locale))
         .menu(&menu)
-        .show_menu_on_left_click(cfg!(target_os = "macos"))
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
             if let Err(error) = handle_tray_menu_event(app, event.id.as_ref()) {
                 eprintln!("failed to handle tray menu event {:?}: {error}", event.id);
@@ -1415,17 +1195,6 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
         })
         .build(app)?;
 
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn setup_app_menu(app: &mut App) -> Result<(), Box<dyn Error>> {
-    let config = load_config()?;
-    refresh_app_menu(app.handle(), &config)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn setup_app_menu(_app: &mut App) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
@@ -1454,31 +1223,6 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
             app.exit(0);
         }
         None => {}
-    }
-
-    Ok(())
-}
-
-fn handle_app_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error>> {
-    match app_menu_action(id) {
-        Some(AppMenuAction::ShowAboutPanel) => open_about_panel(app)?,
-        None => {}
-    }
-    Ok(())
-}
-
-fn open_about_panel(app: &AppHandle) -> Result<(), Box<dyn Error>> {
-    let had_window = app.get_webview_window(MAIN_WINDOW_LABEL).is_some();
-    show_main_window(app)?;
-
-    if had_window {
-        let _ = app.emit(OPEN_ABOUT_PANEL_EVENT, ());
-    } else {
-        let handle = app.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            let _ = handle.emit(OPEN_ABOUT_PANEL_EVENT, ());
-        });
     }
 
     Ok(())
@@ -1518,9 +1262,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
                 min_width: MAIN_WINDOW_MIN_WIDTH as f64,
                 min_height: MAIN_WINDOW_MIN_HEIGHT as f64,
             },
-            // On macOS, tauri.macos.conf.json sets titleBarStyle: "Overlay"
-            // with native traffic lights; decorations: false would conflict.
-            decorations: !cfg!(target_os = "macos"),
+            decorations: true,
             always_on_top: false,
             shadow: true,
             skip_taskbar: false,
@@ -1575,7 +1317,6 @@ fn open_notepad_window_now(
 /// 入池隐藏时设为 Low，浏览器引擎会主动释放缓存、允许换出，从而显著降低
 /// 后台常驻内存；激活取出时恢复 Normal。脚本与事件监听不受影响，
 /// 因此不影响窗口池的呼出速度。
-#[cfg(target_os = "windows")]
 fn set_webview_memory_usage_level(window: &tauri::WebviewWindow, low: bool) {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL,
@@ -1600,9 +1341,6 @@ fn set_webview_memory_usage_level(window: &tauri::WebviewWindow, low: bool) {
         }
     });
 }
-
-#[cfg(not(target_os = "windows"))]
-fn set_webview_memory_usage_level(_window: &tauri::WebviewWindow, _low: bool) {}
 
 fn activate_pooled_notepad(app: &AppHandle, bounds: Option<WindowBounds>) -> Option<String> {
     let pool = app.try_state::<NotepadPool>()?;
@@ -1839,7 +1577,6 @@ fn notepad_window_specs() -> WindowSizeSpec {
     }
 }
 
-#[cfg(target_os = "windows")]
 #[allow(clippy::upper_case_acronyms)]
 fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
     #[repr(C)]
@@ -1910,11 +1647,6 @@ fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
         width: w as u32,
         height: h as u32,
     })
-}
-
-#[cfg(not(target_os = "windows"))]
-fn cursor_centered_bounds(_specs: &WindowSizeSpec) -> Option<WindowBounds> {
-    None
 }
 
 fn saved_surface_specs(app: &AppHandle) -> WindowSizeSpec {
@@ -2040,20 +1772,6 @@ fn open_or_focus_window(
         .skip_taskbar(opts.skip_taskbar)
         .visible(false);
 
-    // 仅主窗口使用 macOS 原生红绿灯（Overlay 标题栏）。notepad / tile 是
-    // decorations: false 的透明无边框窗口，叠加红绿灯会渲染在内容区上方造成冲突
-    #[cfg(target_os = "macos")]
-    let builder = if label == MAIN_WINDOW_LABEL {
-        builder
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true)
-            .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(
-                14.0, 20.0,
-            )))
-    } else {
-        builder
-    };
-
     let window = builder.build()?;
 
     apply_window_bounds(&window, opts.bounds)?;
@@ -2136,7 +1854,6 @@ pub(crate) fn mark_app_exiting(app: &AppHandle) {
     }
 }
 
-#[cfg(desktop)]
 fn setup_autostart_plugin(app: &AppHandle) -> tauri::Result<()> {
     app.plugin(tauri_plugin_autostart::init(
         MacosLauncher::LaunchAgent,
@@ -2144,12 +1861,6 @@ fn setup_autostart_plugin(app: &AppHandle) -> tauri::Result<()> {
     ))
 }
 
-#[cfg(not(desktop))]
-fn setup_autostart_plugin(_app: &AppHandle) -> tauri::Result<()> {
-    Ok(())
-}
-
-#[cfg(desktop)]
 fn setup_global_shortcut_plugin(app: &AppHandle) -> tauri::Result<()> {
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
@@ -2195,12 +1906,6 @@ fn setup_global_shortcut_plugin(app: &AppHandle) -> tauri::Result<()> {
     )
 }
 
-#[cfg(not(desktop))]
-fn setup_global_shortcut_plugin(_app: &AppHandle) -> tauri::Result<()> {
-    Ok(())
-}
-
-#[cfg(desktop)]
 fn register_configured_global_shortcut(app: &AppHandle) {
     let Ok(config) = load_config() else {
         return;
@@ -2273,51 +1978,10 @@ fn shortcut_check_result(
     }
 }
 
-#[cfg(target_os = "macos")]
-fn system_shortcut_conflict(shortcut_config: &str) -> Option<ShortcutCheckResult> {
-    let spec = shortcut_from_config(shortcut_config)?;
-    let message = if shortcut_matches(&spec, false, false, false, true, ShortcutKey::Space) {
-        Some("与 macOS 系统快捷键 Spotlight 冲突")
-    } else if shortcut_matches(&spec, false, true, false, true, ShortcutKey::Space) {
-        Some("与 macOS 系统快捷键 Finder 搜索窗口冲突")
-    } else if shortcut_matches(&spec, true, false, false, false, ShortcutKey::Space)
-        || shortcut_matches(&spec, true, true, false, false, ShortcutKey::Space)
-    {
-        Some("与 macOS 输入法切换快捷键冲突")
-    } else if shortcut_matches(&spec, false, true, false, false, ShortcutKey::Space) {
-        Some("Option+Space 容易与输入法或系统服务快捷键冲突")
-    } else {
-        None
-    }?;
-
-    Some(shortcut_check_result(false, "system", message))
-}
-
-#[cfg(not(target_os = "macos"))]
 fn system_shortcut_conflict(_shortcut_config: &str) -> Option<ShortcutCheckResult> {
     None
 }
 
-#[cfg(target_os = "macos")]
-fn shortcut_matches(
-    spec: &ShortcutSpec,
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-    meta: bool,
-    key: ShortcutKey,
-) -> bool {
-    spec.ctrl == ctrl
-        && spec.alt == alt
-        && spec.shift == shift
-        && spec.meta == meta
-        && spec.key == key
-}
-
-#[cfg(not(desktop))]
-fn register_configured_global_shortcut(_app: &AppHandle) {}
-
-#[cfg(desktop)]
 fn parse_configured_shortcut(field: &str, value: &str) -> Result<Shortcut, Box<dyn Error>> {
     if let Some(conflict) = system_shortcut_conflict(value) {
         return Err(Box::new(AppError {
@@ -2345,7 +2009,6 @@ fn parse_configured_shortcut(field: &str, value: &str) -> Result<Shortcut, Box<d
         })
 }
 
-#[cfg(desktop)]
 fn shortcut_bindings_from_config(config: &AppConfig) -> Result<ShortcutBindings, Box<dyn Error>> {
     // 允许用户主动清空快捷键；空值表示不注册对应的全局快捷键。
     let open_notepad = if config.global_shortcut.is_empty() {
@@ -2384,7 +2047,6 @@ fn shortcut_bindings_from_config(config: &AppConfig) -> Result<ShortcutBindings,
     })
 }
 
-#[cfg(desktop)]
 fn install_global_shortcut_bindings(
     app: &AppHandle,
     config: &AppConfig,
@@ -2410,20 +2072,10 @@ fn install_global_shortcut_bindings(
     Ok(())
 }
 
-#[cfg(desktop)]
 fn apply_global_shortcut_config(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
     install_global_shortcut_bindings(app, config, true)
 }
 
-#[cfg(not(desktop))]
-fn apply_global_shortcut_config(
-    _app: &AppHandle,
-    _config: &AppConfig,
-) -> Result<(), Box<dyn Error>> {
-    Ok(())
-}
-
-#[cfg(desktop)]
 fn to_tauri_shortcut(spec: ShortcutSpec) -> Option<Shortcut> {
     let mut modifiers = Modifiers::empty();
     if spec.ctrl {
@@ -2448,7 +2100,6 @@ fn to_tauri_shortcut(spec: ShortcutSpec) -> Option<Shortcut> {
     Some(Shortcut::new(mod_opt, code))
 }
 
-#[cfg(desktop)]
 fn shortcut_key_to_code(key: ShortcutKey) -> Option<Code> {
     Some(match key {
         ShortcutKey::Letter(c) => match c {
@@ -2539,7 +2190,6 @@ fn shortcut_key_to_code(key: ShortcutKey) -> Option<Code> {
     })
 }
 
-#[cfg(desktop)]
 fn sync_autostart_to_config(app: &AppHandle) {
     let Ok(config) = load_config() else {
         return;
@@ -2550,17 +2200,8 @@ fn sync_autostart_to_config(app: &AppHandle) {
     }
 }
 
-#[cfg(not(desktop))]
-fn sync_autostart_to_config(_app: &AppHandle) {}
-
-#[cfg(desktop)]
 fn autostart_enabled(app: &AppHandle, fallback: bool) -> bool {
     app.autolaunch().is_enabled().unwrap_or(fallback)
-}
-
-#[cfg(not(desktop))]
-fn autostart_enabled(_app: &AppHandle, fallback: bool) -> bool {
-    fallback
 }
 
 fn toggle_autostart(app: &AppHandle) -> Result<AppConfig, Box<dyn Error>> {
@@ -2573,7 +2214,6 @@ fn toggle_autostart(app: &AppHandle) -> Result<AppConfig, Box<dyn Error>> {
     Ok(config)
 }
 
-#[cfg(desktop)]
 fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), Box<dyn Error>> {
     let manager = app.autolaunch();
     if enabled {
@@ -2584,24 +2224,15 @@ fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-#[cfg(not(desktop))]
-fn apply_autostart(_app: &AppHandle, _enabled: bool) -> Result<(), Box<dyn Error>> {
-    Ok(())
-}
-
-#[cfg(desktop)]
 pub fn start_shortcut_recording(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     app.global_shortcut().unregister_all()?;
 
-    #[cfg(target_os = "windows")]
     keyboard_hook::start(app.clone());
 
     Ok(())
 }
 
-#[cfg(desktop)]
 pub fn stop_shortcut_recording(app: &AppHandle) -> Result<(), Box<dyn Error>> {
-    #[cfg(target_os = "windows")]
     keyboard_hook::stop();
 
     let config = load_config()?;
@@ -2609,16 +2240,6 @@ pub fn stop_shortcut_recording(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         eprintln!("failed to re-register global shortcuts after recording: {e}");
     }
 
-    Ok(())
-}
-
-#[cfg(not(desktop))]
-pub fn start_shortcut_recording(_app: &AppHandle) -> Result<(), Box<dyn Error>> {
-    Ok(())
-}
-
-#[cfg(not(desktop))]
-pub fn stop_shortcut_recording(_app: &AppHandle) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
@@ -2646,15 +2267,6 @@ mod tests {
         );
         assert_eq!(tray_menu_action("quit"), Some(TrayMenuAction::Quit));
         assert_eq!(tray_menu_action("unknown"), None);
-    }
-
-    #[test]
-    fn maps_app_menu_ids_to_actions() {
-        assert_eq!(
-            app_menu_action("macos-about"),
-            Some(AppMenuAction::ShowAboutPanel)
-        );
-        assert_eq!(app_menu_action("unknown"), None);
     }
 
     #[test]
@@ -2768,7 +2380,6 @@ mod tests {
         assert_eq!(shortcut_from_config("Ctrl+Unknown"), None);
     }
 
-    #[cfg(desktop)]
     fn test_app_config(global_shortcut: &str, toggle_visibility_shortcut: &str) -> AppConfig {
         AppConfig {
             locale: "zh-CN".into(),
@@ -2818,7 +2429,6 @@ mod tests {
         }
     }
 
-    #[cfg(desktop)]
     #[test]
     fn rejects_duplicate_shortcut_bindings() {
         let config = test_app_config("Ctrl+Shift+K", "Ctrl+Shift+K");
@@ -2831,7 +2441,6 @@ mod tests {
         assert!(error.to_string().contains("must differ"));
     }
 
-    #[cfg(desktop)]
     #[test]
     fn accepts_empty_shortcut_bindings() {
         let config = test_app_config("", "");
@@ -2842,7 +2451,6 @@ mod tests {
         assert!(bindings.toggle_visibility.is_none());
     }
 
-    #[cfg(desktop)]
     #[test]
     fn accepts_visibility_shortcut_when_quick_note_shortcut_is_empty() {
         let config = test_app_config("", "Ctrl+Shift+H");
@@ -3014,15 +2622,6 @@ mod tests {
         assert!(should_save_surface_size_before_close("tile-note-1"));
         assert!(!should_save_surface_size_before_close(MAIN_WINDOW_LABEL));
         assert!(!should_save_surface_size_before_close("settings"));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn detects_known_macos_system_shortcut_conflicts() {
-        let conflict = system_shortcut_conflict("Command+Space").expect("conflict");
-
-        assert_eq!(conflict.conflict_type, "system");
-        assert!(conflict.message.contains("Spotlight"));
     }
 
     #[test]

@@ -417,7 +417,6 @@ fn cli_version_or_help_requested() -> bool {
     env::args().any(|arg| matches!(arg.as_str(), "--version" | "-V" | "--help" | "-h"))
 }
 
-#[cfg(windows)]
 fn ensure_console() {
     use windows_sys::Win32::System::Console::{AllocConsole, AttachConsole, ATTACH_PARENT_PROCESS};
 
@@ -427,9 +426,6 @@ fn ensure_console() {
         }
     }
 }
-
-#[cfg(not(windows))]
-fn ensure_console() {}
 
 fn flush_attached_console_stdout() {
     let _ = std::io::stdout().flush();
@@ -555,18 +551,5 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(move |_app_handle, _event| {
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen {
-                has_visible_windows,
-                ..
-            } = _event
-            {
-                if !has_visible_windows {
-                    if let Err(error) = desktop::show_main_window(_app_handle) {
-                        eprintln!("failed to show main window on dock click: {error}");
-                    }
-                }
-            }
-        });
+        .run(|_app_handle, _event| {});
 }

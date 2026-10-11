@@ -8,18 +8,6 @@ use std::{
 };
 use uuid::Uuid;
 
-#[cfg(target_os = "macos")]
-const DEFAULT_MACOS_GLOBAL_SHORTCUT: &str = "Command+Option+N";
-#[cfg(target_os = "macos")]
-const LEGACY_MACOS_GLOBAL_SHORTCUTS: [&str; 5] = [
-    "Option+Space",
-    "Alt+Space",
-    "Ctrl+Option+Space",
-    "Control+Option+Space",
-    "Ctrl+Alt+Space",
-];
-const MACOS_SHORTCUT_MIGRATION_MARKER: &str = ".macos-shortcut-default-v3";
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -264,11 +252,6 @@ fn default_data_dir() -> Result<PathBuf, AppError> {
         }
     }
 
-    #[cfg(target_os = "macos")]
-    if let Some(dir) = dirs::data_dir() {
-        return Ok(dir.join("花笺"));
-    }
-
     if let Some(dir) = dirs::document_dir() {
         return Ok(dir.join("花笺"));
     }
@@ -503,7 +486,6 @@ fn canonical_for_compare(path: &Path) -> PathBuf {
 // file exists. SHFileOperationW is exported directly by shell32.dll and keeps
 // the same Recycle Bin semantics when FOF_ALLOWUNDO is set, without activating
 // the failing COM class.
-#[cfg(target_os = "windows")]
 fn recycle_path(path: &Path) -> Result<(), AppError> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::UI::Shell::{
@@ -554,14 +536,6 @@ fn recycle_path(path: &Path) -> Result<(), AppError> {
             .with_detail("path", full_path.display().to_string()));
     }
     Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn recycle_path(path: &Path) -> Result<(), AppError> {
-    trash::delete(path).map_err(|error| {
-        AppError::new("trash", format!("移入回收站失败: {error}"))
-            .with_detail("path", path.display().to_string())
-    })
 }
 
 fn paths_refer_to_same_entry(first: &Path, second: &Path) -> bool {
@@ -712,11 +686,6 @@ impl NoteStore {
         self.config_dir.join("config.json")
     }
 
-    #[cfg(target_os = "macos")]
-    fn macos_shortcut_migration_path(&self) -> PathBuf {
-        self.config_dir.join(MACOS_SHORTCUT_MIGRATION_MARKER)
-    }
-
     pub fn load_config(&self) -> Result<AppConfig, AppError> {
         self.ensure_config_dir()?;
         let path = self.config_path();
@@ -726,7 +695,6 @@ impl NoteStore {
         if !path.exists() {
             let config = self.default_config();
             self.save_config(config.clone())?;
-            self.mark_macos_shortcut_migration_handled()?;
             return Ok(config);
         }
 
@@ -738,9 +706,6 @@ impl NoteStore {
         config.tab_indent_size = config.tab_indent_size.clamp(1, 8);
         write_json_atomic(&path, &config)?;
         fs::create_dir_all(self.data_dir.join("notes"))?;
-        if self.migrate_macos_shortcut_default(&mut config)? {
-            write_json_atomic(&path, &config)?;
-        }
         Ok(config)
     }
 
@@ -1147,9 +1112,6 @@ impl NoteStore {
         AppConfig {
             locale: default_locale(),
             data_dir: Some(self.data_dir.to_string_lossy().to_string()),
-            #[cfg(target_os = "macos")]
-            global_shortcut: DEFAULT_MACOS_GLOBAL_SHORTCUT.into(),
-            #[cfg(not(target_os = "macos"))]
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
             autostart: false,
@@ -1252,13 +1214,6 @@ impl NoteStore {
             config.last_known_base_dir = None;
             fs::create_dir_all(&self.config_dir)?;
             write_json_atomic(&self.config_path(), &config)?;
-            let marker = old_dir.join(MACOS_SHORTCUT_MIGRATION_MARKER);
-            if marker.exists() {
-                let _ = fs::copy(
-                    &marker,
-                    self.config_dir.join(MACOS_SHORTCUT_MIGRATION_MARKER),
-                );
-            }
             return Ok(());
         }
         Ok(())
@@ -1271,40 +1226,6 @@ impl NoteStore {
 
     fn ensure_data_dir(&self) -> Result<(), AppError> {
         fs::create_dir_all(&self.data_dir)?;
-        Ok(())
-    }
-
-    #[cfg(target_os = "macos")]
-    fn migrate_macos_shortcut_default(&self, config: &mut AppConfig) -> Result<bool, AppError> {
-        let migration_path = self.macos_shortcut_migration_path();
-        if migration_path.exists() {
-            return Ok(false);
-        }
-
-        let should_migrate = LEGACY_MACOS_GLOBAL_SHORTCUTS
-            .iter()
-            .any(|shortcut| shortcuts_equal(shortcut, &config.global_shortcut));
-        if should_migrate {
-            config.global_shortcut = DEFAULT_MACOS_GLOBAL_SHORTCUT.into();
-        }
-
-        self.mark_macos_shortcut_migration_handled()?;
-        Ok(should_migrate)
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    fn migrate_macos_shortcut_default(&self, _config: &mut AppConfig) -> Result<bool, AppError> {
-        Ok(false)
-    }
-
-    #[cfg(target_os = "macos")]
-    fn mark_macos_shortcut_migration_handled(&self) -> Result<(), AppError> {
-        fs::write(self.macos_shortcut_migration_path(), "done")?;
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    fn mark_macos_shortcut_migration_handled(&self) -> Result<(), AppError> {
         Ok(())
     }
 
@@ -1585,26 +1506,13 @@ impl NoteStore {
             let Some(name) = file_name.to_str() else {
                 return Ok(true);
             };
-            if name == "config.json" || name == MACOS_SHORTCUT_MIGRATION_MARKER {
+            if name == "config.json" {
                 continue;
             }
             return Ok(true);
         }
         Ok(false)
     }
-}
-
-#[cfg(target_os = "macos")]
-fn shortcuts_equal(left: &str, right: &str) -> bool {
-    fn normalize(value: &str) -> String {
-        value
-            .chars()
-            .filter(|ch| !ch.is_whitespace())
-            .flat_map(|ch| ch.to_lowercase())
-            .collect()
-    }
-
-    normalize(left) == normalize(right)
 }
 
 fn safe_file_stem(title: &str) -> String {
@@ -1809,7 +1717,7 @@ mod tests {
         let store = NoteStore::new(root.clone(), root);
         // Seed an isolated config before exercising storage. Without this,
         // load_config performs the production legacy scan and can migrate a
-        // developer's real 花笺 data into the test directory on macOS.
+        // developer's real 花笺 data into the test directory.
         write_json_atomic(&store.config_path(), &store.default_config())
             .expect("seed isolated test config");
         store
@@ -1909,9 +1817,6 @@ mod tests {
             .expect("write default config");
 
         let default_config = store.load_config().expect("load default config");
-        #[cfg(target_os = "macos")]
-        assert_eq!(default_config.global_shortcut, "Command+Option+N");
-        #[cfg(not(target_os = "macos"))]
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
         assert!(default_config.note_auto_save);
         assert!(default_config.note_surface_auto_save);
@@ -2334,99 +2239,6 @@ mod tests {
             config.data_dir.as_deref(),
             Some(data_dir.to_string_lossy().as_ref())
         );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn migrates_legacy_macos_shortcut_default_once() {
-        let store = test_store("legacy-macos-shortcut");
-        let notes_dir = store.data_dir().join("notes");
-        fs::create_dir_all(store.data_dir()).expect("create base dir");
-        fs::create_dir_all(&notes_dir).expect("create notes dir");
-        fs::write(
-            store.config_path(),
-            format!(
-                r#"{{
-  "notesDir": "{}",
-  "globalShortcut": "Option+Space",
-  "closeToTray": true,
-  "autostart": false,
-  "defaultViewMode": "split"
-}}"#,
-                notes_dir.to_string_lossy().replace('\\', "\\\\")
-            ),
-        )
-        .expect("write legacy config");
-
-        let migrated = store.load_config().expect("load legacy config");
-
-        assert_eq!(migrated.global_shortcut, "Command+Option+N");
-        assert!(store.macos_shortcut_migration_path().exists());
-
-        let mut manual = migrated;
-        manual.global_shortcut = "Option+Space".into();
-        store
-            .save_config(manual.clone())
-            .expect("save manual config");
-
-        let loaded = store.load_config().expect("reload manual config");
-        assert_eq!(loaded.global_shortcut, "Option+Space");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn migrates_previous_macos_shortcut_default() {
-        let store = test_store("previous-macos-shortcut");
-        let notes_dir = store.data_dir().join("notes");
-        fs::create_dir_all(store.data_dir()).expect("create base dir");
-        fs::create_dir_all(&notes_dir).expect("create notes dir");
-        fs::write(
-            store.config_path(),
-            format!(
-                r#"{{
-  "notesDir": "{}",
-  "globalShortcut": "Ctrl+Option+Space",
-  "closeToTray": true,
-  "autostart": false,
-  "defaultViewMode": "split"
-}}"#,
-                notes_dir.to_string_lossy().replace('\\', "\\\\")
-            ),
-        )
-        .expect("write previous config");
-
-        let migrated = store.load_config().expect("load previous config");
-
-        assert_eq!(migrated.global_shortcut, "Command+Option+N");
-        assert!(store.macos_shortcut_migration_path().exists());
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn leaves_custom_macos_shortcut_unchanged() {
-        let store = test_store("custom-macos-shortcut");
-        let notes_dir = store.data_dir().join("notes");
-        fs::create_dir_all(store.data_dir()).expect("create base dir");
-        fs::create_dir_all(&notes_dir).expect("create notes dir");
-        fs::write(
-            store.config_path(),
-            format!(
-                r#"{{
-  "notesDir": "{}",
-  "globalShortcut": "Command+K",
-  "closeToTray": true,
-  "autostart": false,
-  "defaultViewMode": "split"
-}}"#,
-                notes_dir.to_string_lossy().replace('\\', "\\\\")
-            ),
-        )
-        .expect("write custom config");
-
-        let loaded = store.load_config().expect("load custom config");
-
-        assert_eq!(loaded.global_shortcut, "Command+K");
-        assert!(store.macos_shortcut_migration_path().exists());
     }
 
     #[test]
