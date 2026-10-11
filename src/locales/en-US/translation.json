@@ -143,6 +143,7 @@
       "heading": "Heading",
       "hr": "Horizontal rule",
       "inlineMath": "Inline math",
+      "insertImage": "Insert local image",
       "italic": "Italic",
       "ol": "Ordered list",
       "quote": "Blockquote",
@@ -210,6 +211,7 @@
     "autostart": "Launch on Startup",
     "closeTitle": "Close Settings",
     "closeToTray": "Close to Tray",
+    "collapseSidebarOnStartup": "Collapse Sidebar on Startup",
     "defaultView": {
       "edit": "Edit",
       "label": "Default view",

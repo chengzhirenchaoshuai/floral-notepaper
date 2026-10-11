@@ -65,7 +65,7 @@ import {
   saveExternalFile,
   updateNote,
 } from "../features/notes/api";
-import { cleanUnusedImages, saveImageFromPath } from "../features/images/api";
+import { cleanUnusedImages, pickLocalImages, saveImageFromPath } from "../features/images/api";
 import { useImagePaste, insertTextAtCursor } from "../features/images/useImagePaste";
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
 import type { ExternalFile, Note, NoteMetadata } from "../features/notes/types";
@@ -83,7 +83,12 @@ import {
   getNoteContextMenuItems,
   type NoteContextMenuAction,
 } from "../features/notes/noteContextMenu";
-import { openNotepadWindow, takeStartupFile, toggleTileWindow } from "../features/windows/api";
+import {
+  appReady,
+  openNotepadWindow,
+  takeStartupFile,
+  toggleTileWindow,
+} from "../features/windows/api";
 import {
   closeCurrentWindow,
   minimizeCurrentWindow,
@@ -464,6 +469,14 @@ export function MainWindow({
   const isExternalRef = useRef(isExternal);
   isExternalRef.current = isExternal;
 
+  // 外部 md 文件里的相对路径图片，按该文件所在目录解析
+  const externalFileDir = useMemo(() => {
+    if (!selectedExternalFile) return undefined;
+    const normalized = selectedExternalFile.filePath.replace(/\\/g, "/");
+    const idx = normalized.lastIndexOf("/");
+    return idx >= 0 ? normalized.slice(0, idx) : undefined;
+  }, [selectedExternalFile]);
+
   const noteMenuTarget = useMemo(
     () => notes.find((note) => note.id === noteMenu?.noteId) ?? null,
     [noteMenu?.noteId, notes],
@@ -730,6 +743,9 @@ export function MainWindow({
         setSettingsConfig(loadedConfig);
         setSavedDataDir(loadedConfig.dataDir);
         setViewMode(normalizeViewMode(loadedConfig.defaultViewMode));
+        if (loadedConfig.collapseSidebarOnStartup) {
+          setSidebarCollapsed(true);
+        }
         setNotes(loadedNotes);
         setCategories(loadedCategories);
         setCollapsedCategories(new Set(loadedCategories));
@@ -749,7 +765,16 @@ export function MainWindow({
       } catch (error) {
         if (!cancelled) showToast(getErrorMessage(error));
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+          // 等首屏（侧边栏收起状态等初始设置）真正绘制完成后再显示主窗口，
+          // 避免窗口先以默认状态露出一瞬间、再跳变成配置里的状态
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (!cancelled) void appReady().catch(() => undefined);
+            });
+          });
+        }
       }
     }
 
@@ -1646,6 +1671,27 @@ export function MainWindow({
       } else {
         showToast(t("main.images.cleanedNone", { defaultValue: "没有需要清理的图片" }), "info");
       }
+    } catch (error) {
+      showToast(getErrorMessage(error));
+    }
+  };
+
+  const handleInsertLocalImage = async () => {
+    if (isExternal) return;
+    try {
+      const paths = await pickLocalImages();
+      if (paths.length === 0) return;
+
+      const noteId = await ensureNoteSaved();
+      if (!noteId) return;
+
+      const textarea = contentRef.current;
+      if (!textarea) return;
+
+      const rels = await Promise.all(paths.map((p) => saveImageFromPath(noteId, p)));
+      const markdown = rels.map((rel) => `![](${rel})`).join("\n");
+      insertTextAtCursor(textarea, setContent, markdown);
+      markDirty();
     } catch (error) {
       showToast(getErrorMessage(error));
     }
@@ -2965,6 +3011,28 @@ export function MainWindow({
                             {button.label}
                           </button>
                         ))}
+                        <span className="w-px h-4 mx-1 bg-paper-deep/50" aria-hidden="true" />
+                        <button
+                          title={t("main.toolbar.insertImage", { defaultValue: "插入本地图片" })}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => void handleInsertLocalImage()}
+                          className="w-6 h-6 flex items-center justify-center rounded text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
+                        >
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <path d="M21 15l-5-5L5 21" />
+                          </svg>
+                        </button>
                       </div>
 
                       <div className="flex-1 overflow-hidden px-5 pb-4">
@@ -3036,6 +3104,7 @@ export function MainWindow({
                           fontSize={settingsConfig?.fontSize ?? 14}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           imageBaseDir={imageBaseDir ?? undefined}
+                          externalFileDir={externalFileDir}
                         />
                       </div>
                     </div>

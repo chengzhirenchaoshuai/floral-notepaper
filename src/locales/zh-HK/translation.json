@@ -143,6 +143,7 @@
       "heading": "標題",
       "hr": "分隔線",
       "inlineMath": "行內公式",
+      "insertImage": "插入本地圖片",
       "italic": "斜體",
       "ol": "有序清單",
       "quote": "引用",
@@ -210,6 +211,7 @@
     "autostart": "開機自啟",
     "closeTitle": "關閉設定",
     "closeToTray": "關閉至系統匣",
+    "collapseSidebarOnStartup": "啟動時自動收起側欄",
     "defaultView": {
       "edit": "編輯",
       "label": "預設檢視",

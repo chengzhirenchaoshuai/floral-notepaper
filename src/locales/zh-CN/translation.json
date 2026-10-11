@@ -143,6 +143,7 @@
       "heading": "标题",
       "hr": "分割线",
       "inlineMath": "行内公式",
+      "insertImage": "插入本地图片",
       "italic": "斜体",
       "ol": "有序列表",
       "quote": "引用",
@@ -210,6 +211,7 @@
     "autostart": "开机自启",
     "closeTitle": "关闭设置",
     "closeToTray": "关闭到托盘",
+    "collapseSidebarOnStartup": "启动时自动收起侧栏",
     "defaultView": {
       "edit": "编辑",
       "label": "默认视图",
