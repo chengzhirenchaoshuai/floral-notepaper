@@ -9,7 +9,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeSlug from "rehype-slug";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { Components } from "react-markdown";
+import type { Components, ExtraProps, Options as MarkdownOptions } from "react-markdown";
 import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
 import { resolveExternalLocalImagePath, resolveMarkdownImageSrc } from "./imageSrc";
@@ -108,7 +108,12 @@ interface MarkdownPreviewProps {
   externalFileDir?: string;
 }
 
-const remarkPlugins = [remarkGfm, remarkMath, remarkAlerts];
+// 关闭单波浪线删除线，避免 "1~3、5~7" 这类范围写法被误渲染为删除线，仅保留 ~~文字~~
+const remarkPlugins: NonNullable<MarkdownOptions["remarkPlugins"]> = [
+  [remarkGfm, { singleTilde: false }],
+  remarkMath,
+  remarkAlerts,
+];
 const sanitizeSchema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), "mark", "center", "font", "u", "abbr"],
@@ -207,9 +212,42 @@ function Blockquote({
   );
 }
 
+type HastElement = NonNullable<ExtraProps["node"]>;
+
+// 读取 HTML 写法里的 align 属性（如 README 常见的 <p align="center">），转成 text-align
+function alignStyle(node?: HastElement): React.CSSProperties | undefined {
+  const align = node?.properties?.align;
+  return align === "center" || align === "left" || align === "right"
+    ? { textAlign: align }
+    : undefined;
+}
+
+// 段落里只有一张未指定尺寸的图片（普通 ![]() 贴图）时，才按整块居中大图展示；
+// 与文字混排或多张并排的图片（如 shields.io 徽章）保持原始尺寸内联显示
+function isStandaloneImageParagraph(node?: HastElement): boolean {
+  const meaningful = (node?.children ?? []).filter(
+    (child) => !(child.type === "text" && !child.value.trim()),
+  );
+  if (meaningful.length !== 1) return false;
+  const only = meaningful[0];
+  return (
+    only.type === "element" &&
+    only.tagName === "img" &&
+    only.properties?.width == null &&
+    only.properties?.height == null
+  );
+}
+
+const standaloneImageClassName =
+  "[&>img]:block [&>img]:w-[50%] [&>img]:mx-auto [&>img]:my-2 [&>img]:rounded";
+
 const staticComponents: Components = {
-  h1: ({ children, id }) => (
-    <h1 id={id} className="text-[1.57em] font-display font-bold text-ink mt-6 mb-4 tracking-wide">
+  h1: ({ children, id, node }) => (
+    <h1
+      id={id}
+      className="text-[1.57em] font-display font-bold text-ink mt-6 mb-4 tracking-wide"
+      style={alignStyle(node)}
+    >
       {children}
     </h1>
   ),
@@ -228,7 +266,14 @@ const staticComponents: Components = {
       {children}
     </h4>
   ),
-  p: ({ children }) => <p className="text-ink-soft leading-[1.9]">{children}</p>,
+  p: ({ children, node }) => (
+    <p
+      className={`text-ink-soft leading-[1.9] ${isStandaloneImageParagraph(node) ? standaloneImageClassName : ""}`}
+      style={alignStyle(node)}
+    >
+      {children}
+    </p>
+  ),
   strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
   em: ({ children }) => <em className="italic text-bamboo-light">{children}</em>,
   blockquote: Blockquote,
@@ -326,12 +371,9 @@ export function MarkdownPreview({
     () => ({
       ...staticComponents,
       img: ({ src, alt, width, height, ...props }) => {
-        // 带显式 width/height 的图片（多为文档里手写的 <img> 小图标）保持原尺寸内联显示；
-        // 没有指定尺寸的（普通 ![]() 贴图）沿用整块居中的默认样式
-        const hasExplicitSize = width != null || height != null;
-        const sizeClassName = hasExplicitSize
-          ? "inline-block align-middle"
-          : "w-[50%] rounded my-2 mx-auto block";
+        // 默认按原始尺寸内联显示（徽章、小图标可并排），并限制不超出容器宽度；
+        // 独占一段的普通贴图由所在段落的 standaloneImageClassName 改为整块居中样式
+        const sizeClassName = "inline-block align-middle max-w-full";
 
         const localPath = resolveExternalLocalImagePath(src, externalFileDir);
         if (localPath) {

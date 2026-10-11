@@ -360,6 +360,8 @@ export function MainWindow({
     normalizeViewMode(initialConfig?.defaultViewMode ?? "split"),
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // 启动阶段关闭侧栏过渡动画，避免"先展开再收起"的动画被用户看到
+  const [sidebarAnimated, setSidebarAnimated] = useState(false);
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -771,7 +773,10 @@ export function MainWindow({
           // 避免窗口先以默认状态露出一瞬间、再跳变成配置里的状态
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              if (!cancelled) void appReady().catch(() => undefined);
+              if (cancelled) return;
+              void appReady().catch(() => undefined);
+              // 窗口显示后再开启侧栏宽度过渡动画，启动时的收起是瞬间完成的
+              setSidebarAnimated(true);
             });
           });
         }
@@ -2184,7 +2189,9 @@ export function MainWindow({
 
         <div className="relative z-10 flex flex-1 min-h-0">
           <div
-            className="border-r border-paper-deep/30 bg-paper/40 shrink-0 overflow-hidden transition-[width] duration-[600ms]"
+            className={`border-r border-paper-deep/30 bg-paper/40 shrink-0 overflow-hidden ${
+              sidebarAnimated ? "transition-[width] duration-[600ms]" : ""
+            }`}
             style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
           >
             <div className="flex flex-col h-full" style={{ width: `${sidebarWidth}px` }}>
