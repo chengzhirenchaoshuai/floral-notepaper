@@ -7,6 +7,16 @@ function isRemoteUrl(src: string): boolean {
   return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(src) || src.startsWith("data:");
 }
 
+// react-markdown 生成 HTML 时会对图片地址做 URL 转义（中文、空格等变成 %XX），
+// 读本地文件前要先还原成真实路径；转义序列不合法时保留原串
+function decodeImageSrc(src: string): string {
+  try {
+    return decodeURIComponent(src);
+  } catch {
+    return src;
+  }
+}
+
 // 判断是否为本地绝对路径：Windows 盘符（D:/...）或 UNC 路径（//server/share/...）
 function isAbsoluteLocalPath(normalizedSrc: string): boolean {
   return /^[a-zA-Z]:\//.test(normalizedSrc) || normalizedSrc.startsWith("//");
@@ -22,7 +32,8 @@ export function resolveMarkdownImageSrc(
     return "";
   }
 
-  const normalizedSrc = src.replace(/\\/g, "/");
+  // convertFileSrc 自己会做 URL 编码，先解码避免二次编码
+  const normalizedSrc = decodeImageSrc(src).replace(/\\/g, "/");
   if (!imageBaseDir || !normalizedSrc.startsWith(NOTE_IMAGE_PREFIX)) {
     return src;
   }
@@ -40,7 +51,7 @@ export function resolveExternalLocalImagePath(
     return undefined;
   }
 
-  const normalizedSrc = src.replace(/\\/g, "/");
+  const normalizedSrc = decodeImageSrc(src).replace(/\\/g, "/");
 
   if (isAbsoluteLocalPath(normalizedSrc)) {
     return normalizedSrc;

@@ -26,9 +26,11 @@ function LocalImage({
   const [dataUrl, setDataUrl] = useState<string | null>(
     () => localImageDataUrlCache.get(path) ?? null,
   );
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const cached = localImageDataUrlCache.get(path);
+    setFailed(false);
     if (cached) {
       setDataUrl(cached);
       return;
@@ -40,12 +42,22 @@ function LocalImage({
         localImageDataUrlCache.set(path, url);
         if (!cancelled) setDataUrl(url);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
     return () => {
       cancelled = true;
     };
   }, [path]);
 
+  // 读取失败时显示占位文字，避免图片悄无声息地消失
+  if (failed) {
+    return (
+      <span className="italic opacity-60" title={path}>
+        [{alt || path}]
+      </span>
+    );
+  }
   if (!dataUrl) return null;
   return <img src={dataUrl} alt={alt} loading="lazy" {...props} />;
 }
