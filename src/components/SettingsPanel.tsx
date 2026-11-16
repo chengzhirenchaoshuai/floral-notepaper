@@ -884,8 +884,10 @@ interface ToggleRowProps {
 }
 
 function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
+  // label 必须带 relative：隐藏的 checkbox（sr-only 即绝对定位）要以本行为定位基准，
+  // 否则会定位到滚动区外，点击聚焦时浏览器滚动外层 overflow-hidden 容器，整个面板被挪出视野而白屏
   return (
-    <label className="flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25 cursor-pointer">
+    <label className="relative flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25 cursor-pointer">
       <span className="text-[12px] text-ink-soft">{label}</span>
       <input
         type="checkbox"

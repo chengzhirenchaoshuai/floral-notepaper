@@ -77,6 +77,25 @@ describe("UpdateSettingsSection", () => {
     expect(markup).not.toContain("待更新版本：1.0.5");
   });
 
+  test("anchors each hidden toggle checkbox to its own row", () => {
+    const markup = renderToStaticMarkup(
+      <UpdateSettingsSection
+        initialSettings={settings}
+        initialStatus={status}
+        mode="settingsOnly"
+      />,
+    );
+
+    // 每个包着 sr-only checkbox 的 label 都必须是定位容器，否则点击聚焦时外层容器被滚动导致白屏
+    const toggleLabels = markup.match(
+      /<label class="[^"]*"><span[^>]*>[^<]*<\/span><input[^>]*sr-only/g,
+    );
+    expect(toggleLabels?.length).toBe(2);
+    for (const label of toggleLabels ?? []) {
+      expect(label).toMatch(/<label class="relative /);
+    }
+  });
+
   test("preserves non-standard check interval values in the settings UI", () => {
     const markup = renderToStaticMarkup(
       <UpdateSettingsSection

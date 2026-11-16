@@ -718,9 +718,11 @@ interface UpdateToggleRowProps {
 }
 
 function UpdateToggleRow({ label, checked, disabled = false, onChange }: UpdateToggleRowProps) {
+  // label 必须带 relative，原因同设置面板的 ToggleRow：让 sr-only 的 checkbox 留在本行内，
+  // 避免点击聚焦时浏览器滚动外层容器导致整个设置面板白屏
   return (
     <label
-      className={`flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25 ${
+      className={`relative flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25 ${
         disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
       }`}
     >
