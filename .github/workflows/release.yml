@@ -1,11 +1,9 @@
-# 自用版发布流程：推送 v*.*.* Tag 后，构建未签名的 Windows x64 安装包与便携版，
-# 并发布到本仓库的 GitHub Release，供应用内更新检查使用。
+# 自用版远程打包（应急备用）：日常发布改用本地打包，见 scripts/publish-release-local.ps1。
+# 推送 Tag 不再自动触发，只能在 Actions 页面手动运行，指定一个已存在的 Tag，
+# 构建未签名的 Windows x64 安装包与便携版并发布到本仓库的 GitHub Release。
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -17,13 +15,13 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: release-${{ github.event.inputs.tag }}
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RUST_TOOLCHAIN: "1.96.1"
-  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  RELEASE_TAG: ${{ github.event.inputs.tag }}
 
 jobs:
   release-windows:

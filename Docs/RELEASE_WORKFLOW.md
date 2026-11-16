@@ -38,25 +38,32 @@ pwsh -File scripts/build-windows-local.ps1
    ```
 
 3. （可选）编写发布说明 `Docs/release-note/<版本>.md`。有这个文件就作为 Release 正文，否则由 GitHub 自动生成。
-4. 提交并推送 Tag：
+4. 提交版本号改动：
 
    ```powershell
-   git commit -am "发布：准备 v1.2.1"
-   git tag v1.2.1
-   git push fork self/main --tags
+   git commit -am "chore: 发布 v1.2.1"
    ```
 
-5. GitHub Actions 的 `Release` 工作流会自动构建并创建 Release。也可以在 Actions 页面手动运行 `Release`，填入一个已存在的 Tag 重新发布，同名文件会被覆盖。
+5. 本地打包并发布：
 
-## 三、工作流说明
+   ```powershell
+   pwsh -File scripts/publish-release-local.ps1
+   ```
 
-`.github/workflows/release.yml`：
+   脚本会检查工作区干净、gh 已登录、该版本 Release 尚不存在，然后本地构建，打 Tag，推送分支和 Tag 到 `fork`，最后创建 Release 并上传安装包与便携版。
 
-- 触发：推送 `v*.*.*` Tag，或手动触发并指定 Tag。
+   常用参数：
+
+   | 参数              | 作用                                                         |
+   | ----------------- | ------------------------------------------------------------ |
+   | `-SkipBuild`      | 不重新构建，直接发布 `release/` 下已有产物（例如已自测过的） |
+   | `-SkipNpmInstall` | 构建时跳过 `npm ci`                                          |
+   | `-DryRun`         | 只检查和构建，不打 Tag、不推送、不发布                       |
+
+## 三、远程打包（应急备用）
+
+`.github/workflows/release.yml` 已不再随推送 Tag 自动运行，日常发布一律用本地打包。只有本机无法打包时，才在 GitHub 仓库的 Actions 页面手动运行 `Release`，填入一个已推送的 Tag：
+
 - 校验：Tag 必须是 `vMAJOR.MINOR.PATCH`，且与 `package.json` 版本一致。
 - 构建：在 `windows-latest` 上调用 `scripts/build-windows-local.ps1`。
-- 发布：用 `gh release create` 上传安装包和便携版；Release 已存在时改为覆盖上传。
-
-> fork 仓库默认禁用 GitHub Actions，首次使用前要在仓库的 Actions 页面手动启用。
-
-GitHub Actions 运行器是一次性的，产物不会落在本机。要在本机拿到安装包请用“本地打包”。
+- 发布：用 `gh release create` 上传安装包和便携版；Release 已存在时改为覆盖上传（会覆盖本地上传的同名文件）。
