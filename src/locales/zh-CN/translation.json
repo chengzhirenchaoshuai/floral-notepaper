@@ -276,7 +276,6 @@
     "tileRenderMarkdown": "磁贴渲染 Markdown",
     "tileDoubleClickToEdit": "双击磁贴进入编辑",
     "tileSaveReturnsToPin": "保存后回到磁贴",
-    "renderHtmlMarkdown": "允许 HTML 标签渲染",
     "splitScrollSync": "分栏同步滚动",
     "preserveLineBreaks": "预览保留单个换行",
     "title": "应用设置",

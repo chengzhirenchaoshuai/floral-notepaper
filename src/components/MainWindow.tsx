@@ -1136,7 +1136,6 @@ export function MainWindow({
     content,
     selectedId,
     fontSize: settingsConfig?.fontSize,
-    renderHtmlMarkdown: settingsConfig?.renderHtmlMarkdown,
     preserveLineBreaks: settingsConfig?.preserveLineBreaks,
     splitRatio,
   });
@@ -1355,7 +1354,6 @@ export function MainWindow({
                         <MarkdownPreview
                           content={deferredContent}
                           fontSize={settingsConfig?.fontSize ?? 14}
-                          renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           preserveLineBreaks={settingsConfig?.preserveLineBreaks ?? true}
                           imageBaseDir={imageBaseDir ?? undefined}
                           externalFileDir={externalFileDir}

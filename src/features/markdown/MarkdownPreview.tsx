@@ -116,6 +116,7 @@ function extractText(node: React.ReactNode): string {
 interface MarkdownPreviewProps {
   content: string;
   fontSize?: number;
+  // 是否渲染内嵌 HTML 标签（经 rehype-sanitize 过滤）；默认开启，仅磁贴关闭
   renderHtml?: boolean;
   // 段落内的单个换行是否渲染为换行；关闭时按 Markdown 标准合并成空格
   preserveLineBreaks?: boolean;
@@ -382,7 +383,7 @@ const staticComponents: Components = {
 export function MarkdownPreview({
   content,
   fontSize = 14,
-  renderHtml = false,
+  renderHtml = true,
   preserveLineBreaks = true,
   imageBaseDir,
   externalFileDir,

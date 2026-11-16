@@ -29,7 +29,6 @@ export interface AppConfig {
   tileDoubleClickToEdit: boolean;
   tileSaveReturnsToPin: boolean;
   tileRenderMarkdown: boolean;
-  renderHtmlMarkdown: boolean;
   splitScrollSync: boolean;
   preserveLineBreaks: boolean;
   surfaceWidth?: number;

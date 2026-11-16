@@ -78,8 +78,6 @@ pub struct AppConfig {
     pub tile_save_returns_to_pin: bool,
     #[serde(default)]
     pub tile_render_markdown: bool,
-    #[serde(default)]
-    pub render_html_markdown: bool,
     #[serde(default = "default_split_scroll_sync")]
     pub split_scroll_sync: bool,
     // 预览时把段落内的单个换行渲染为换行（remark-breaks）
@@ -1145,7 +1143,6 @@ impl NoteStore {
             tile_double_click_to_edit: false,
             tile_save_returns_to_pin: false,
             tile_render_markdown: false,
-            render_html_markdown: false,
             split_scroll_sync: true,
             preserve_line_breaks: true,
             surface_width: None,
@@ -1867,7 +1864,6 @@ mod tests {
             tile_double_click_to_edit: true,
             tile_save_returns_to_pin: true,
             tile_render_markdown: false,
-            render_html_markdown: false,
             split_scroll_sync: true,
             preserve_line_breaks: true,
             surface_width: None,

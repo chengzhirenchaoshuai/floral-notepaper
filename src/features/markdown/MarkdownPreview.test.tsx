@@ -35,6 +35,26 @@ describe("MarkdownPreview", () => {
     expect(markup).not.toContain("<br");
   });
 
+  test("renders inline HTML by default and strips unsafe tags", () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownPreview
+        content={'<mark>重点</mark><script>alert(1)</script><img src="x" onerror="alert(1)">'}
+      />,
+    );
+
+    expect(markup).toContain("<mark>重点</mark>");
+    expect(markup).not.toContain("<script");
+    expect(markup).not.toContain("onerror");
+  });
+
+  test("escapes inline HTML when renderHtml is off", () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownPreview content={"<mark>重点</mark>"} renderHtml={false} />,
+    );
+
+    expect(markup).not.toContain("<mark>");
+  });
+
   test("does not add line breaks inside code blocks", () => {
     const markup = renderToStaticMarkup(<MarkdownPreview content={"```\na\nb\n```"} />);
 

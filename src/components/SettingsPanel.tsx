@@ -297,11 +297,6 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             onChange={(checked) => setConfigValue("tileSaveReturnsToPin", checked)}
           />
           <ToggleRow
-            label={t("settings.renderHtmlMarkdown", { defaultValue: "允许 HTML 标签渲染" })}
-            checked={config.renderHtmlMarkdown}
-            onChange={(checked) => setConfigValue("renderHtmlMarkdown", checked)}
-          />
-          <ToggleRow
             label={t("settings.preserveLineBreaks", { defaultValue: "预览保留单个换行" })}
             checked={config.preserveLineBreaks ?? true}
             onChange={(checked) => setConfigValue("preserveLineBreaks", checked)}

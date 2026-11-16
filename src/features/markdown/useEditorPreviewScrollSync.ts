@@ -19,7 +19,6 @@ interface ScrollSyncOptions {
   selectedId: string | null;
   // 以下值变化会影响排版，需要重新测量
   fontSize: number | undefined;
-  renderHtmlMarkdown: boolean | undefined;
   preserveLineBreaks: boolean | undefined;
   splitRatio: number;
 }
@@ -33,7 +32,6 @@ export function useEditorPreviewScrollSync({
   content,
   selectedId,
   fontSize,
-  renderHtmlMarkdown,
   preserveLineBreaks,
   splitRatio,
 }: ScrollSyncOptions) {
@@ -143,7 +141,6 @@ export function useEditorPreviewScrollSync({
     scheduleScrollMeasurement,
     selectedId,
     fontSize,
-    renderHtmlMarkdown,
     preserveLineBreaks,
     splitRatio,
     viewMode,
