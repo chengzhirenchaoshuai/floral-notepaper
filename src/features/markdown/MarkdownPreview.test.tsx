@@ -16,6 +16,31 @@ describe("MarkdownPreview", () => {
     expect(markup).toContain("正文");
   });
 
+  test("renders single line breaks inside a paragraph as <br> by default", () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownPreview content={"**日期**：2026-11-16\n**环境**：验证环境"} />,
+    );
+
+    expect(markup).toMatch(/2026-11-16<br\/?>/);
+  });
+
+  test("keeps standard soft breaks when preserveLineBreaks is off", () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownPreview
+        content={"**日期**：2026-11-16\n**环境**：验证环境"}
+        preserveLineBreaks={false}
+      />,
+    );
+
+    expect(markup).not.toContain("<br");
+  });
+
+  test("does not add line breaks inside code blocks", () => {
+    const markup = renderToStaticMarkup(<MarkdownPreview content={"```\na\nb\n```"} />);
+
+    expect(markup).not.toContain("<br");
+  });
+
   test("keeps code block controls outside the horizontally scrollable pre", () => {
     const markup = renderToStaticMarkup(
       <MarkdownPreview content={"```text\nvery long code line\n```"} />,

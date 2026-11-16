@@ -82,6 +82,9 @@ pub struct AppConfig {
     pub render_html_markdown: bool,
     #[serde(default = "default_split_scroll_sync")]
     pub split_scroll_sync: bool,
+    // 预览时把段落内的单个换行渲染为换行（remark-breaks）
+    #[serde(default = "default_preserve_line_breaks")]
+    pub preserve_line_breaks: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1144,6 +1147,7 @@ impl NoteStore {
             tile_render_markdown: false,
             render_html_markdown: false,
             split_scroll_sync: true,
+            preserve_line_breaks: true,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
@@ -1676,6 +1680,10 @@ fn default_tile_ctrl_close() -> bool {
     true
 }
 
+fn default_preserve_line_breaks() -> bool {
+    true
+}
+
 fn default_split_scroll_sync() -> bool {
     true
 }
@@ -1861,6 +1869,7 @@ mod tests {
             tile_render_markdown: false,
             render_html_markdown: false,
             split_scroll_sync: true,
+            preserve_line_breaks: true,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
@@ -2118,6 +2127,24 @@ mod tests {
             config.data_dir.as_deref(),
             Some(new_data.to_string_lossy().as_ref())
         );
+    }
+
+    // 旧版配置文件没有 preserveLineBreaks 字段时默认开启，显式关闭时保持关闭
+    #[test]
+    fn preserve_line_breaks_defaults_to_true_for_old_config() {
+        let root = test_root("preserve-line-breaks-default");
+        let store = NoteStore::new(root.join("config"), root.join("data"));
+        let mut value = serde_json::to_value(store.default_config()).expect("serialize config");
+        let fields = value.as_object_mut().expect("config is object");
+
+        // 模拟旧版配置：没有该字段
+        fields.remove("preserveLineBreaks");
+        let old: AppConfig = serde_json::from_value(value.clone()).expect("parse old config");
+        assert!(old.preserve_line_breaks);
+
+        value["preserveLineBreaks"] = serde_json::Value::Bool(false);
+        let off: AppConfig = serde_json::from_value(value).expect("parse config");
+        assert!(!off.preserve_line_breaks);
     }
 
     // 新位置已有用户数据时绝不合并，保留两边，防止交叉污染

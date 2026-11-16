@@ -31,6 +31,7 @@ export interface AppConfig {
   tileRenderMarkdown: boolean;
   renderHtmlMarkdown: boolean;
   splitScrollSync: boolean;
+  preserveLineBreaks: boolean;
   surfaceWidth?: number;
   surfaceHeight?: number;
   windowX?: number;

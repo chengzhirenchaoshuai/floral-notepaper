@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -116,6 +117,8 @@ interface MarkdownPreviewProps {
   content: string;
   fontSize?: number;
   renderHtml?: boolean;
+  // 段落内的单个换行是否渲染为换行；关闭时按 Markdown 标准合并成空格
+  preserveLineBreaks?: boolean;
   imageBaseDir?: string;
   externalFileDir?: string;
 }
@@ -125,6 +128,11 @@ const remarkPlugins: NonNullable<MarkdownOptions["remarkPlugins"]> = [
   [remarkGfm, { singleTilde: false }],
   remarkMath,
   remarkAlerts,
+];
+// 在标准插件链后追加 remark-breaks，把段落内的软换行变成 <br>
+const remarkPluginsWithBreaks: NonNullable<MarkdownOptions["remarkPlugins"]> = [
+  ...remarkPlugins,
+  remarkBreaks,
 ];
 const sanitizeSchema = {
   ...defaultSchema,
@@ -375,6 +383,7 @@ export function MarkdownPreview({
   content,
   fontSize = 14,
   renderHtml = false,
+  preserveLineBreaks = true,
   imageBaseDir,
   externalFileDir,
 }: MarkdownPreviewProps) {
@@ -420,7 +429,7 @@ export function MarkdownPreview({
     <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>
       {content.trim() ? (
         <Markdown
-          remarkPlugins={remarkPlugins}
+          remarkPlugins={preserveLineBreaks ? remarkPluginsWithBreaks : remarkPlugins}
           rehypePlugins={renderHtml ? rehypePluginsWithHtml : rehypePluginsDefault}
           components={components}
         >

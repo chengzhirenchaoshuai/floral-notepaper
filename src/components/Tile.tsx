@@ -16,6 +16,7 @@ export interface TileProps extends Omit<
   rotation?: number;
   fontSize?: number;
   renderMarkdown?: boolean;
+  preserveLineBreaks?: boolean;
   imageBaseDir?: string;
 }
 
@@ -76,6 +77,7 @@ export function Tile({
   rotation = 0,
   fontSize = 14,
   renderMarkdown = false,
+  preserveLineBreaks = true,
   imageBaseDir,
   className = "",
   style,
@@ -126,6 +128,7 @@ export function Tile({
                 content={content}
                 fontSize={fontSize}
                 renderHtml={false}
+                preserveLineBreaks={preserveLineBreaks}
                 imageBaseDir={imageBaseDir}
               />
             </div>

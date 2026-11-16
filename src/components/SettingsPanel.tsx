@@ -302,6 +302,11 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             onChange={(checked) => setConfigValue("renderHtmlMarkdown", checked)}
           />
           <ToggleRow
+            label={t("settings.preserveLineBreaks", { defaultValue: "预览保留单个换行" })}
+            checked={config.preserveLineBreaks ?? true}
+            onChange={(checked) => setConfigValue("preserveLineBreaks", checked)}
+          />
+          <ToggleRow
             label={t("settings.splitScrollSync", { defaultValue: "分栏同步滚动" })}
             checked={config.splitScrollSync ?? true}
             onChange={(checked) => setConfigValue("splitScrollSync", checked)}

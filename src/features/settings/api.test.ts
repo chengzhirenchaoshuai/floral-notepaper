@@ -55,6 +55,7 @@ describe("settings api", () => {
       tileRenderMarkdown: false,
       renderHtmlMarkdown: false,
       splitScrollSync: true,
+      preserveLineBreaks: true,
       openAtCursor: true,
       collapseSidebarOnStartup: false,
     };
@@ -93,6 +94,7 @@ describe("settings api", () => {
       tileRenderMarkdown: false,
       renderHtmlMarkdown: false,
       splitScrollSync: true,
+      preserveLineBreaks: true,
       openAtCursor: true,
       collapseSidebarOnStartup: false,
     };

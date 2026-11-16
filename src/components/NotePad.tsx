@@ -138,6 +138,7 @@ export function NotePad({
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
   const [surfaceFontSize, setSurfaceFontSize] = useState(14);
   const [tileRenderMarkdown, setTileRenderMarkdown] = useState(false);
+  const [preserveLineBreaks, setPreserveLineBreaks] = useState(true);
   const [tileDoubleClickToEdit, setTileDoubleClickToEdit] = useState(false);
   const [tileSaveReturnsToPin, setTileSaveReturnsToPin] = useState(false);
   // null = 配置未加载，此时保持窗口创建时（后端已按配置设置）的置顶状态
@@ -214,6 +215,7 @@ export function NotePad({
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
           setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
           setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
+          setPreserveLineBreaks(loadedConfig.preserveLineBreaks ?? true);
           setTileDoubleClickToEdit(loadedConfig.tileDoubleClickToEdit ?? false);
           setTileSaveReturnsToPin(loadedConfig.tileSaveReturnsToPin ?? false);
           setNotepadAlwaysOnTop(loadedConfig.notepadAlwaysOnTop ?? true);
@@ -271,6 +273,7 @@ export function NotePad({
       tileColorMode?: TileColorMode;
       surfaceFontSize?: number;
       tileRenderMarkdown?: boolean;
+      preserveLineBreaks?: boolean;
       tileDoubleClickToEdit?: boolean;
       tileSaveReturnsToPin?: boolean;
       notepadAlwaysOnTop?: boolean;
@@ -283,6 +286,8 @@ export function NotePad({
       if (event.payload.surfaceFontSize != null) setSurfaceFontSize(event.payload.surfaceFontSize);
       if (event.payload.tileRenderMarkdown != null)
         setTileRenderMarkdown(event.payload.tileRenderMarkdown);
+      if (event.payload.preserveLineBreaks != null)
+        setPreserveLineBreaks(event.payload.preserveLineBreaks);
       if (event.payload.tileDoubleClickToEdit != null)
         setTileDoubleClickToEdit(event.payload.tileDoubleClickToEdit);
       if (event.payload.tileSaveReturnsToPin != null)
@@ -733,6 +738,7 @@ export function NotePad({
           color={tileColor}
           fontSize={surfaceFontSize}
           renderMarkdown={tileRenderMarkdown}
+          preserveLineBreaks={preserveLineBreaks}
           imageBaseDir={imageBaseDir ?? undefined}
           width="100%"
           className="h-full cursor-default"
