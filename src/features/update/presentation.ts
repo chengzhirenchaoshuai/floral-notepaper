@@ -4,6 +4,27 @@ import type { UpdateState } from "./types";
 
 export const ABOUT_UPDATE_LABEL_DURATION_MS = 30_000;
 
+// 无法应用内更新时引导用户手动下载的 Release 页面
+export const MANUAL_DOWNLOAD_URL =
+  "https://github.com/chengzhirenchaoshuai/floral-notepaper/releases/latest";
+
+// 这些错误表示只能手动下载新版替换
+const MANUAL_DOWNLOAD_ERROR_CODES = new Set([
+  "updatePortableDirNotWritable",
+  "updatePortableManualOnly",
+]);
+
+/** 便携版已发现新版本、但无法在应用内完成更新时，提供“打开下载页”入口。 */
+export function shouldOfferManualDownload(
+  status: Pick<UpdateState, "installKind" | "latestVersion" | "lastError"> | null | undefined,
+): boolean {
+  return (
+    status?.installKind === "windowsPortable" &&
+    Boolean(status.latestVersion) &&
+    MANUAL_DOWNLOAD_ERROR_CODES.has(status.lastError?.code ?? "")
+  );
+}
+
 export type UpdateNoticeTone = "idle" | "success" | "error";
 
 export interface UpdateInlineNotice {

@@ -210,6 +210,10 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
       return translate("settings.update.error.installUnsupportedKind", {
         defaultValue: "当前安装形态暂不支持应用内安装",
       });
+    case "updatePortableDirNotWritable":
+      return translate("settings.update.error.portableDirNotWritable", {
+        defaultValue: "便携版所在目录无法写入，请手动下载新版替换",
+      });
     case "updatePortableManualOnly":
       return translate("settings.update.error.portableManualOnly", {
         defaultValue: "当前便携版仅支持手动下载更新包后覆盖升级",

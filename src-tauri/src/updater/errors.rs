@@ -79,6 +79,13 @@ pub fn github_release_no_assets() -> AppError {
     app_error("updateGithubNoAssets", "GitHub Release 中没有找到可用资产")
 }
 
+pub fn portable_dir_not_writable() -> AppError {
+    app_error(
+        "updatePortableDirNotWritable",
+        "便携版所在目录无法写入，请手动下载新版替换",
+    )
+}
+
 pub fn portable_manual_only() -> AppError {
     app_error(
         "updatePortableManualOnly",

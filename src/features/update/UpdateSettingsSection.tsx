@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 import { SlidingButtonGroup } from "../../components/SlidingButtonGroup";
 import {
@@ -16,6 +17,8 @@ import {
   getInitialUpdateStatusNotice,
   getUpdateCheckCompletionNotice,
   getUpdateStatusHydrationNotice,
+  MANUAL_DOWNLOAD_URL,
+  shouldOfferManualDownload,
   type UpdateInlineNotice,
 } from "./presentation";
 import { getUpdateErrorCode, getUpdateErrorMessage } from "./updateErrors";
@@ -258,7 +261,10 @@ export function UpdateSettingsSection({
   const percent =
     downloadProgress?.percent ??
     (status?.status === "downloaded" ? 100 : status?.status === "downloading" ? 0 : null);
+  // 便携版无法应用内更新时，只提供“打开下载页”，不再显示下载、安装按钮
+  const canOpenDownloadPage = shouldOfferManualDownload(status);
   const canDownload =
+    !canOpenDownloadPage &&
     status?.latestVersion != null &&
     status?.assetName != null &&
     status?.assetSize != null &&
@@ -266,6 +272,7 @@ export function UpdateSettingsSection({
     status?.status !== "installScheduled" &&
     !isDownloading;
   const canInstall =
+    !canOpenDownloadPage &&
     status?.latestVersion != null &&
     status?.assetPath != null &&
     status?.assetSize != null &&
@@ -477,11 +484,13 @@ export function UpdateSettingsSection({
             canDownload,
             canCancel,
             canInstall,
+            canOpenDownloadPage,
             installBusy: busyAction === "install",
             isInstalling,
             onDownload: () => void handleDownload(),
             onCancel: () => void handleCancel(),
             onInstall: () => void handleInstall(),
+            onOpenDownloadPage: () => void openUrl(MANUAL_DOWNLOAD_URL),
           })}
         </>
       ) : null}
@@ -564,11 +573,13 @@ interface DownloadCardProps {
   canDownload: boolean;
   canCancel: boolean;
   canInstall: boolean;
+  canOpenDownloadPage: boolean;
   installBusy: boolean;
   isInstalling: boolean;
   onDownload: () => void;
   onCancel: () => void;
   onInstall: () => void;
+  onOpenDownloadPage: () => void;
 }
 
 function renderDownloadCard({
@@ -581,11 +592,13 @@ function renderDownloadCard({
   canDownload,
   canCancel,
   canInstall,
+  canOpenDownloadPage,
   installBusy,
   isInstalling,
   onDownload,
   onCancel,
   onInstall,
+  onOpenDownloadPage,
 }: DownloadCardProps) {
   if (
     !status?.latestVersion &&
@@ -703,6 +716,15 @@ function renderDownloadCard({
                   defaultValue: "重新尝试安装",
                 })
               : t("settings.update.install", { defaultValue: "安装并重启" })}
+          </button>
+        ) : null}
+        {canOpenDownloadPage ? (
+          <button
+            type="button"
+            onClick={onOpenDownloadPage}
+            className="h-8 px-3 rounded-lg bg-bamboo text-[11px] text-paper hover:bg-bamboo-light transition-colors cursor-pointer"
+          >
+            {t("settings.update.openDownloadPage", { defaultValue: "打开下载页" })}
           </button>
         ) : null}
       </div>

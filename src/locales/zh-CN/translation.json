@@ -356,6 +356,7 @@
         "manifestMissingAssets": "更新清单未包含任何可下载资产",
         "manifestUnsupportedSchema": "更新清单格式版本暂不受支持",
         "platformUnsupported": "当前平台或安装形态暂不支持应用内更新",
+        "portableDirNotWritable": "便携版所在目录无法写入，请手动下载新版替换",
         "portableManualOnly": "当前便携版仅支持手动下载更新包后覆盖升级",
         "providerFixtureUnreadable": "无法读取本地更新测试清单",
         "providerNotConfigured": "更新源尚未配置测试清单",
@@ -366,6 +367,7 @@
       },
       "confirmInstall": "应用会先保存所有未保存内容，然后关闭、安装更新，并在完成后重新打开。是否继续？",
       "download": "下载更新",
+      "openDownloadPage": "打开下载页",
       "downloaded": "版本 {{version}} 已下载完成",
       "interval": {
         "custom": "{{hours}} 小时",

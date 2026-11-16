@@ -47,7 +47,26 @@ impl PlatformInfo {
             && self.install_kind != InstallKind::Unknown
     }
 
+    /// 下载、安装前的平台检查：在检查更新的基础上，便携版还要求 exe 所在目录可写，
+    /// 否则无法在原位置替换 exe，只能手动下载新版。
     pub fn ensure_in_app_updates_supported(&self) -> Result<(), AppError> {
+        self.ensure_update_check_supported()?;
+        if self.install_kind == InstallKind::WindowsPortable {
+            let writable = self
+                .current_exe
+                .as_deref()
+                .map(Path::new)
+                .and_then(Path::parent)
+                .is_some_and(dir_is_writable);
+            if !writable {
+                return Err(errors::portable_dir_not_writable());
+            }
+        }
+        Ok(())
+    }
+
+    /// 检查更新前的平台检查：安装版与便携版都允许检查新版本。
+    pub fn ensure_update_check_supported(&self) -> Result<(), AppError> {
         if self.os == Os::Unsupported || self.arch == Arch::Unsupported {
             return Err(errors::unsupported_platform());
         }
@@ -67,10 +86,33 @@ impl PlatformInfo {
         }
 
         match self.install_kind {
-            InstallKind::WindowsNsis => Ok(()),
-            InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
+            InstallKind::WindowsNsis | InstallKind::WindowsPortable => Ok(()),
             InstallKind::Unknown => Err(errors::unsupported_platform()),
         }
+    }
+}
+
+/// 通过新建并删除一个探测文件判断目录是否可写（只读 U 盘、受保护目录等返回 false）。
+fn dir_is_writable(dir: &Path) -> bool {
+    let probe = dir.join(format!(
+        ".floral-notepaper-write-probe-{}",
+        std::process::id()
+    ));
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+    {
+        Ok(file) => {
+            drop(file);
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        // 上次异常退出残留的同名探测文件：能删掉也说明目录可写
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            std::fs::remove_file(&probe).is_ok()
+        }
+        Err(_) => false,
     }
 }
 
@@ -352,22 +394,65 @@ mod tests {
         assert_eq!(error.code, "updatePlatformUnsupported");
     }
 
-    #[test]
-    fn rejects_windows_portable_for_in_app_updates() {
-        let platform = PlatformInfo {
+    fn portable_platform(current_exe: Option<String>) -> PlatformInfo {
+        PlatformInfo {
             os: Os::Windows,
             arch: Arch::X86_64,
             app_version: "1.0.3".into(),
             app_id: APP_ID.into(),
             install_kind: InstallKind::WindowsPortable,
-            current_exe: None,
-        };
+            current_exe,
+        }
+    }
 
-        let error = platform
+    #[test]
+    fn allows_windows_portable_to_check_updates() {
+        // 便携版即使 exe 路径未知（无法判断目录是否可写），也允许检查新版本
+        portable_platform(None)
+            .ensure_update_check_supported()
+            .expect("portable installs should be able to check updates");
+    }
+
+    #[test]
+    fn allows_windows_portable_in_app_updates_when_dir_is_writable() {
+        let dir = std::env::temp_dir()
+            .join("floral-notepaper-updater-tests")
+            .join("platform-portable-writable");
+        std::fs::create_dir_all(&dir).expect("create portable dir");
+        let exe = dir.join("floral-notepaper.exe");
+
+        portable_platform(Some(exe.to_string_lossy().to_string()))
             .ensure_in_app_updates_supported()
-            .expect_err("portable installs should not support in-app updates");
+            .expect("writable portable dir should allow in-app updates");
 
-        assert_eq!(error.code, "updatePortableManualOnly");
+        // 探测文件不能残留
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .expect("read portable dir")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains("write-probe"))
+            .collect();
+        assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn rejects_windows_portable_in_app_updates_when_dir_is_not_writable() {
+        // 目录不存在等同于不可写
+        let exe = std::env::temp_dir()
+            .join("floral-notepaper-updater-tests")
+            .join("platform-portable-missing-dir")
+            .join("nested")
+            .join("floral-notepaper.exe");
+
+        let error = portable_platform(Some(exe.to_string_lossy().to_string()))
+            .ensure_in_app_updates_supported()
+            .expect_err("unwritable portable dir should fall back to manual update");
+
+        assert_eq!(error.code, "updatePortableDirNotWritable");
+
+        let error = portable_platform(None)
+            .ensure_in_app_updates_supported()
+            .expect_err("unknown exe path should fall back to manual update");
+        assert_eq!(error.code, "updatePortableDirNotWritable");
     }
 
     #[test]

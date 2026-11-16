@@ -919,9 +919,9 @@ fn download_failure_action(code: &str) -> Option<String> {
         | "updateDownloadUrlNotAllowed"
         | "updateDownloadManifestUnavailable"
         | "updateDownloadManifestUnreadable" => Some("configureUpdateSource".to_string()),
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => {
-            Some("useSupportedInstall".to_string())
-        }
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updatePortableDirNotWritable" => Some("useSupportedInstall".to_string()),
         _ => Some("retryDownload".to_string()),
     }
 }
@@ -1321,7 +1321,8 @@ mod tests {
     }
 
     #[test]
-    fn run_rejects_windows_portable_install_kind() {
+    fn run_rejects_windows_portable_when_exe_dir_is_not_writable() {
+        // 测试平台的 current_exe 为空，无法确认目录可写，应退回手动更新
         let paths = test_paths("download-run-portable-platform");
         let service = UpdateDownloadService {
             github_manifest_path: None,
@@ -1340,9 +1341,9 @@ mod tests {
                 Arc::new(AtomicBool::new(false)),
                 |_| {},
             )
-            .expect_err("portable install kind should be rejected");
+            .expect_err("portable install with unwritable dir should be rejected");
 
-        assert_eq!(error.code, "updatePortableManualOnly");
+        assert_eq!(error.code, "updatePortableDirNotWritable");
         let saved_state = state::load(&paths).expect("load failed state");
         assert_eq!(saved_state.status, UpdateStatus::Failed);
         assert_eq!(

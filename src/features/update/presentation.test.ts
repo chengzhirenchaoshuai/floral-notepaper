@@ -7,6 +7,7 @@ import {
   getInitialUpdateStatusNotice,
   getUpdateCheckCompletionNotice,
   getUpdateStatusHydrationNotice,
+  shouldOfferManualDownload,
 } from "./presentation";
 import type { UpdateState } from "./types";
 import { describe, expect, test } from "vitest";
@@ -138,5 +139,46 @@ describe("update presentation helpers", () => {
       tone: "idle",
       text: "正在读取更新设置...",
     });
+  });
+});
+
+describe("shouldOfferManualDownload", () => {
+  const portableFailed: UpdateState = {
+    ...availableStatus,
+    status: "failed",
+    installKind: "windowsPortable",
+    lastError: {
+      code: "updatePortableDirNotWritable",
+      message: "便携版所在目录无法写入，请手动下载新版替换",
+      recoverable: false,
+      action: "useSupportedInstall",
+    },
+  };
+
+  test("便携版目录不可写且有新版本时提供手动下载", () => {
+    expect(shouldOfferManualDownload(portableFailed)).toBe(true);
+  });
+
+  test("便携版暂不支持自动替换时提供手动下载", () => {
+    expect(
+      shouldOfferManualDownload({
+        ...portableFailed,
+        lastError: { ...portableFailed.lastError!, code: "updatePortableManualOnly" },
+      }),
+    ).toBe(true);
+  });
+
+  test("安装版、无新版本或其他错误时不提供", () => {
+    expect(shouldOfferManualDownload({ ...portableFailed, installKind: "windowsNsis" })).toBe(
+      false,
+    );
+    expect(shouldOfferManualDownload({ ...portableFailed, latestVersion: null })).toBe(false);
+    expect(
+      shouldOfferManualDownload({
+        ...portableFailed,
+        lastError: { ...portableFailed.lastError!, code: "updateDownloadNetwork" },
+      }),
+    ).toBe(false);
+    expect(shouldOfferManualDownload(null)).toBe(false);
   });
 });

@@ -642,7 +642,9 @@ fn install_failure_action(code: &str) -> &'static str {
         | "updateInstallAssetSizeMismatch"
         | "updateInstallAssetHashMismatch"
         | "updateInstallAssetExtractFailed" => "retryDownload",
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => "useSupportedInstall",
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updatePortableDirNotWritable" => "useSupportedInstall",
         _ => "retryInstall",
     }
 }

@@ -145,7 +145,7 @@ impl UpdateCheckService {
             context.platform.arch,
             context.platform.install_kind
         );
-        if let Err(error) = context.platform.ensure_in_app_updates_supported() {
+        if let Err(error) = context.platform.ensure_update_check_supported() {
             persist_last_auto_check_at(paths, &settings)?;
             state::save(paths, &failed_state(&context, &settings, &error))?;
             return Err(error);
@@ -594,7 +594,9 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
             Some("configureUpdateSource")
         }
         "updateProviderFixtureUnreadable" => Some("fixFixturePath"),
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => Some("useSupportedInstall"),
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updatePortableDirNotWritable" => Some("useSupportedInstall"),
         _ => Some("retry"),
     }
 }
@@ -741,26 +743,26 @@ mod tests {
     }
 
     #[test]
-    fn run_rejects_windows_portable_install_kind() {
+    fn run_checks_windows_portable_and_selects_portable_asset() {
+        // 便携版也能检查更新，并且选中便携版 exe 而不是安装包
         let paths = test_paths("check-run-portable-platform");
+        let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
         let service = UpdateCheckService::with_provider_and_platform(
-            GithubProvider::offline(),
+            GithubProvider::with_manifest_path(github_manifest),
             test_platform(Os::Windows, Arch::X86_64, InstallKind::WindowsPortable),
         );
 
-        let error = service
+        let result = service
             .run(&paths, true, "1.0.3")
-            .expect_err("portable install kind should be rejected");
+            .expect("portable install kind should be able to check updates");
 
-        assert_eq!(error.code, "updatePortableManualOnly");
-        let saved_state = state::load(&paths).expect("load failed state");
-        assert_eq!(saved_state.status, UpdateStatus::Failed);
+        assert_eq!(result.status, UpdateCheckStatus::Available);
+        let saved_state = state::load(&paths).expect("load available state");
+        assert_eq!(saved_state.status, UpdateStatus::Available);
+        assert_eq!(saved_state.latest_version.as_deref(), Some("1.0.5"));
         assert_eq!(
-            saved_state
-                .last_error
-                .as_ref()
-                .and_then(|error| error.action.as_deref()),
-            Some("useSupportedInstall")
+            saved_state.asset_name.as_deref(),
+            Some("floral-notepaper_1.0.5_windows_x64_portable.exe")
         );
     }
 
