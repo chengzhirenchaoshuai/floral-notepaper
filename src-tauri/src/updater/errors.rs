@@ -85,10 +85,3 @@ pub fn portable_dir_not_writable() -> AppError {
         "便携版所在目录无法写入，请手动下载新版替换",
     )
 }
-
-pub fn portable_manual_only() -> AppError {
-    app_error(
-        "updatePortableManualOnly",
-        "当前便携版仅支持手动下载更新包后覆盖升级",
-    )
-}

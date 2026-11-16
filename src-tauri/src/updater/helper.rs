@@ -75,6 +75,14 @@ pub struct UpdateHelperCommand {
 struct AppliedUpdate {
     launch_target: PathBuf,
     rollback: Option<WindowsRollbackPlan>,
+    portable_rollback: Option<PortableRollbackPlan>,
+}
+
+/// 便携版替换后的回滚信息：旧 exe 被改名保存在 backup_path。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PortableRollbackPlan {
+    target_path: PathBuf,
+    backup_path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -394,6 +402,15 @@ fn execute_apply(
     if let Err(code) = relaunch_target(&applied_update.launch_target, log) {
         let failure_code = if let Some(rollback) = applied_update.rollback.as_ref() {
             rollback_windows_update(rollback, log).err().unwrap_or(code)
+        } else if let Some(rollback) = applied_update.portable_rollback.as_ref() {
+            // 新版启动失败：恢复旧 exe 并尝试把旧版重新打开
+            match rollback_portable_update(rollback, log) {
+                Ok(()) => {
+                    let _ = relaunch_target(&rollback.target_path, log);
+                    code
+                }
+                Err(rollback_code) => rollback_code,
+            }
         } else {
             code
         };
@@ -741,9 +758,165 @@ fn install_windows_portable(
     command: &UpdateHelperCommand,
     log: &mut File,
 ) -> Result<AppliedUpdate, UpdateHelperExitCode> {
-    write_log_line(log, "windows portable install is manual-only")?;
-    let _ = command;
-    Err(UpdateHelperExitCode::UnsupportedInstallKind)
+    replace_portable_executable(command, log, |staged_path, log| {
+        verify_windows_installed_version(staged_path, &command.target_version, log)
+    })
+}
+
+/// 便携版替换核心流程；verify 用于核对 .new 的版本号（测试中可替换）。
+fn replace_portable_executable<V>(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+    verify: V,
+) -> Result<AppliedUpdate, UpdateHelperExitCode>
+where
+    V: FnOnce(&Path, &mut File) -> Result<(), UpdateHelperExitCode>,
+{
+    let target_path = &command.target_path;
+    let staged_path = portable_sibling_path(target_path, "new")?;
+    let backup_path = portable_sibling_path(target_path, "old")?;
+
+    // 1. 先把新版复制到同目录的 .new，并核对版本号；此时旧 exe 原封不动
+    remove_file_if_exists(&staged_path).map_err(|error| {
+        let _ = write_log_line(
+            log,
+            &format!(
+                "failed to remove stale portable staging file {} ({error})",
+                staged_path.display()
+            ),
+        );
+        UpdateHelperExitCode::ReplacementFailed
+    })?;
+    if let Err(error) = fs::copy(&command.asset_path, &staged_path) {
+        let code = map_copy_error_code(&error, UpdateHelperExitCode::ReplacementFailed);
+        write_log_line(
+            log,
+            &format!(
+                "failed to stage portable executable {} -> {} ({error})",
+                command.asset_path.display(),
+                staged_path.display()
+            ),
+        )?;
+        let _ = fs::remove_file(&staged_path);
+        return Err(code);
+    }
+    if let Err(code) = verify(&staged_path, log) {
+        let _ = fs::remove_file(&staged_path);
+        return Err(code);
+    }
+
+    // 2. 旧 exe 改名为 .old（上次残留的 .old 先删掉）
+    remove_file_if_exists(&backup_path).map_err(|error| {
+        let _ = write_log_line(
+            log,
+            &format!(
+                "failed to remove stale portable backup {} ({error})",
+                backup_path.display()
+            ),
+        );
+        let _ = fs::remove_file(&staged_path);
+        UpdateHelperExitCode::ReplacementFailed
+    })?;
+    if let Err(error) = fs::rename(target_path, &backup_path) {
+        write_log_line(
+            log,
+            &format!(
+                "failed to move current portable executable {} -> {} ({error})",
+                target_path.display(),
+                backup_path.display()
+            ),
+        )?;
+        let _ = fs::remove_file(&staged_path);
+        return Err(UpdateHelperExitCode::ReplacementFailed);
+    }
+
+    // 3. .new 改名为原文件名；失败则把 .old 改回去
+    let rollback = PortableRollbackPlan {
+        target_path: target_path.clone(),
+        backup_path,
+    };
+    if let Err(error) = fs::rename(&staged_path, target_path) {
+        write_log_line(
+            log,
+            &format!(
+                "failed to move new portable executable {} -> {} ({error})",
+                staged_path.display(),
+                target_path.display()
+            ),
+        )?;
+        let _ = fs::remove_file(&staged_path);
+        rollback_portable_update(&rollback, log)?;
+        return Err(UpdateHelperExitCode::ReplacementFailed);
+    }
+
+    write_log_line(
+        log,
+        &format!(
+            "replaced portable executable {} with version {}",
+            target_path.display(),
+            command.target_version
+        ),
+    )?;
+    Ok(AppliedUpdate {
+        launch_target: target_path.clone(),
+        rollback: None,
+        portable_rollback: Some(rollback),
+    })
+}
+
+/// 便携版替换用的同目录临时文件路径，例如 `花笺.exe.new`、`花笺.exe.old`。
+/// 与原 exe 同目录才能保证改名是同一磁盘内的原子操作。
+pub(crate) fn portable_sibling_path(
+    target_path: &Path,
+    suffix: &str,
+) -> Result<PathBuf, UpdateHelperExitCode> {
+    let file_name = target_path
+        .file_name()
+        .ok_or(UpdateHelperExitCode::ReplacementFailed)?;
+    let mut sibling_name = file_name.to_os_string();
+    sibling_name.push(".");
+    sibling_name.push(suffix);
+    Ok(target_path.with_file_name(sibling_name))
+}
+
+/// 把 .old 改回原文件名，恢复到更新前的状态。
+fn rollback_portable_update(
+    rollback: &PortableRollbackPlan,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    write_log_line(
+        log,
+        &format!(
+            "restoring portable executable {} from {}",
+            rollback.target_path.display(),
+            rollback.backup_path.display()
+        ),
+    )?;
+    if rollback.target_path.exists() {
+        fs::remove_file(&rollback.target_path).map_err(|error| {
+            let _ = write_log_line(
+                log,
+                &format!(
+                    "failed to remove replaced portable executable {} ({error})",
+                    rollback.target_path.display()
+                ),
+            );
+            UpdateHelperExitCode::ReplacementFailed
+        })?;
+    }
+    fs::rename(&rollback.backup_path, &rollback.target_path).map_err(|error| {
+        let _ = write_log_line(
+            log,
+            &format!(
+                "failed to restore portable executable {} -> {} ({error})",
+                rollback.backup_path.display(),
+                rollback.target_path.display()
+            ),
+        );
+        UpdateHelperExitCode::ReplacementFailed
+    })?;
+    write_log_line(log, "restored previous portable executable")?;
+    Ok(())
 }
 
 fn install_windows_installer(
@@ -832,6 +1005,7 @@ fn install_windows_installer(
     Ok(AppliedUpdate {
         launch_target,
         rollback: Some(rollback),
+        portable_rollback: None,
     })
 }
 
@@ -1928,6 +2102,18 @@ fn cleanup_applied_update(
     applied_update: &AppliedUpdate,
     log: &mut File,
 ) -> Result<(), UpdateHelperExitCode> {
+    if let Some(rollback) = applied_update.portable_rollback.as_ref() {
+        // 旧 exe 已不在运行，通常可直接删除；删不掉也不算失败，下次启动时再清理
+        if let Err(error) = remove_file_if_exists(&rollback.backup_path) {
+            write_log_line(
+                log,
+                &format!(
+                    "failed to remove portable backup {} now, will retry on next launch ({error})",
+                    rollback.backup_path.display()
+                ),
+            )?;
+        }
+    }
     if let Some(rollback) = applied_update.rollback.as_ref() {
         fs::remove_dir_all(&rollback.backup_dir).map_err(|error| {
             let _ = write_log_line(
@@ -2838,6 +3024,133 @@ mod tests {
         cleanup_after_install(&command, &mut log).expect("cleanup ready marker");
 
         assert!(!command.ready_path.exists());
+    }
+
+    /// 便携版测试命令：目标是一个真实的 exe 文件，资产是新版内容。
+    fn portable_command(root: &Path) -> UpdateHelperCommand {
+        let asset_path = root.join("downloads").join("new-portable.exe");
+        fs::create_dir_all(asset_path.parent().expect("asset dir")).expect("create asset dir");
+        fs::write(&asset_path, b"new version").expect("write asset");
+        let portable_dir = root.join("portable");
+        fs::create_dir_all(&portable_dir).expect("create portable dir");
+        let target_path = portable_dir.join("花笺.exe");
+        fs::write(&target_path, b"old version").expect("write target");
+
+        UpdateHelperCommand {
+            mode: UpdateHelperMode::Apply,
+            install_kind: InstallKind::WindowsPortable,
+            wait_pid: 42,
+            state_path: root.join("state.json"),
+            asset_sha256: sha256_hex(&asset_path).expect("hash asset"),
+            asset_size: fs::metadata(&asset_path).expect("asset metadata").len(),
+            log_path: root.join("helper.log"),
+            ready_path: root.join("helper.ready"),
+            asset_path,
+            target_path,
+            current_version: "1.0.3".into(),
+            target_version: "1.0.5".into(),
+        }
+    }
+
+    #[test]
+    fn portable_sibling_path_appends_suffix_to_full_file_name() {
+        let path = portable_sibling_path(Path::new(r"D:\tools\花笺.exe"), "old").expect("sibling");
+        assert_eq!(path, PathBuf::from(r"D:\tools\花笺.exe.old"));
+    }
+
+    #[test]
+    fn replace_portable_executable_swaps_files_and_keeps_backup() {
+        let root = temp_dir("helper-portable-replace");
+        let command = portable_command(&root);
+        // 上次残留的 .new / .old 不应影响本次替换
+        let stale_new = portable_sibling_path(&command.target_path, "new").expect("new path");
+        fs::write(&stale_new, b"stale new").expect("write stale new");
+        let backup_path = portable_sibling_path(&command.target_path, "old").expect("old path");
+        fs::write(&backup_path, b"stale old").expect("write stale old");
+        let mut log = open_log(&command.log_path).expect("open log");
+
+        let applied = replace_portable_executable(&command, &mut log, |staged, _| {
+            assert_eq!(fs::read(staged).expect("read staged"), b"new version");
+            Ok(())
+        })
+        .expect("replace portable executable");
+
+        assert_eq!(applied.launch_target, command.target_path);
+        assert_eq!(
+            fs::read(&command.target_path).expect("read target"),
+            b"new version"
+        );
+        assert_eq!(fs::read(&backup_path).expect("read backup"), b"old version");
+        assert!(!stale_new.exists(), "staging file should be consumed");
+        assert!(
+            command.asset_path.exists(),
+            "downloaded asset should be kept"
+        );
+
+        cleanup_applied_update(&applied, &mut log).expect("cleanup");
+        assert!(
+            !backup_path.exists(),
+            "backup should be removed after cleanup"
+        );
+    }
+
+    #[test]
+    fn replace_portable_executable_keeps_original_when_version_mismatch() {
+        let root = temp_dir("helper-portable-version-mismatch");
+        let command = portable_command(&root);
+        let mut log = open_log(&command.log_path).expect("open log");
+
+        let error = replace_portable_executable(&command, &mut log, |_, _| {
+            Err(UpdateHelperExitCode::InstallerVersionMismatch)
+        })
+        .expect_err("version mismatch should abort replacement");
+
+        assert_eq!(error, UpdateHelperExitCode::InstallerVersionMismatch);
+        assert_eq!(
+            fs::read(&command.target_path).expect("read target"),
+            b"old version"
+        );
+        assert!(!portable_sibling_path(&command.target_path, "new")
+            .expect("new path")
+            .exists());
+        assert!(!portable_sibling_path(&command.target_path, "old")
+            .expect("old path")
+            .exists());
+    }
+
+    #[test]
+    fn install_windows_portable_rejects_asset_without_version_info() {
+        // 真实流程会读取 exe 版本资源；伪造的资产读不到版本，必须拒绝替换
+        let root = temp_dir("helper-portable-no-version");
+        let command = portable_command(&root);
+        let mut log = open_log(&command.log_path).expect("open log");
+
+        let error = install_windows_portable(&command, &mut log)
+            .expect_err("asset without version info should be rejected");
+
+        assert_eq!(error, UpdateHelperExitCode::InstallerVersionMismatch);
+        assert_eq!(
+            fs::read(&command.target_path).expect("read target"),
+            b"old version"
+        );
+    }
+
+    #[test]
+    fn rollback_portable_update_restores_previous_executable() {
+        let root = temp_dir("helper-portable-rollback");
+        let command = portable_command(&root);
+        let mut log = open_log(&command.log_path).expect("open log");
+        let applied = replace_portable_executable(&command, &mut log, |_, _| Ok(()))
+            .expect("replace portable executable");
+        let rollback = applied.portable_rollback.expect("portable rollback plan");
+
+        rollback_portable_update(&rollback, &mut log).expect("rollback");
+
+        assert_eq!(
+            fs::read(&command.target_path).expect("read target"),
+            b"old version"
+        );
+        assert!(!rollback.backup_path.exists());
     }
 
     #[test]

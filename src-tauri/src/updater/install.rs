@@ -378,12 +378,14 @@ fn spawn_helper_watchdog(request: &HelperLaunchRequest, helper_pid: u32) -> Resu
 
 fn resolve_install_target(platform: &PlatformInfo) -> Result<PathBuf, AppError> {
     match platform.install_kind {
-        super::types::InstallKind::WindowsNsis => platform
-            .current_exe
-            .as_ref()
-            .map(PathBuf::from)
-            .ok_or_else(errors::unsupported_platform),
-        super::types::InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
+        // 安装版与便携版都以当前运行的 exe 作为替换目标
+        super::types::InstallKind::WindowsNsis | super::types::InstallKind::WindowsPortable => {
+            platform
+                .current_exe
+                .as_ref()
+                .map(PathBuf::from)
+                .ok_or_else(errors::unsupported_platform)
+        }
         super::types::InstallKind::Unknown => Err(errors::unsupported_platform()),
     }
 }
@@ -393,7 +395,11 @@ fn stage_helper_copy(
     platform: &PlatformInfo,
     source_path: &Path,
 ) -> Result<PathBuf, AppError> {
-    if platform.install_kind == super::types::InstallKind::WindowsNsis {
+    // 便携版同样把助手复制到更新目录运行，这样替换时原 exe 不被占用
+    if matches!(
+        platform.install_kind,
+        super::types::InstallKind::WindowsNsis | super::types::InstallKind::WindowsPortable
+    ) {
         return stage_windows_helper_copy(paths, source_path);
     }
 
