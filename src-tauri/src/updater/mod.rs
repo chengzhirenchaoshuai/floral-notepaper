@@ -208,6 +208,7 @@ impl UpdaterState {
             state::recover_with_current_version(&self.paths, &self.current_version)?;
         download::cleanup_partial_downloads(&self.paths)?;
         cleanup_update_artifacts(&self.paths, &recovered_state)?;
+        cleanup_current_portable_leftovers();
         Ok(())
     }
 
@@ -428,6 +429,33 @@ fn default_updates_dir() -> PathBuf {
         .unwrap_or_else(|_| env::temp_dir())
         .join("floral-notepaper")
         .join("updates")
+}
+
+/// 便携版启动时清理上次更新残留的 `<exe>.old` / `<exe>.new`（尽力而为，失败不影响启动）。
+fn cleanup_current_portable_leftovers() {
+    let platform = platform::current_platform();
+    if platform.install_kind != types::InstallKind::WindowsPortable {
+        return;
+    }
+    if let Some(exe) = platform.current_exe.as_deref() {
+        cleanup_portable_leftovers(Path::new(exe));
+    }
+}
+
+fn cleanup_portable_leftovers(exe: &Path) {
+    for suffix in ["old", "new"] {
+        let Ok(path) = helper::portable_sibling_path(exe, suffix) else {
+            continue;
+        };
+        if path.is_file() {
+            if let Err(error) = std::fs::remove_file(&path) {
+                eprintln!(
+                    "failed to remove portable update leftover {}: {error}",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 fn cleanup_update_artifacts(
@@ -666,5 +694,32 @@ mod tests {
             state.poll_install_prepare(&request_id),
             InstallPrepareState::Ready
         );
+    }
+
+    #[test]
+    fn cleanup_portable_leftovers_removes_only_old_and_new_siblings() {
+        let dir = std::env::temp_dir()
+            .join("floral-notepaper-updater-tests")
+            .join("portable-leftovers");
+        if dir.exists() {
+            fs::remove_dir_all(&dir).expect("remove stale test dir");
+        }
+        fs::create_dir_all(&dir).expect("create dir");
+        let exe = dir.join("花笺.exe");
+        fs::write(&exe, b"current").expect("write exe");
+        fs::write(dir.join("花笺.exe.old"), b"old").expect("write old");
+        fs::write(dir.join("花笺.exe.new"), b"new").expect("write new");
+        fs::write(dir.join("其他.exe.old"), b"other").expect("write unrelated");
+
+        cleanup_portable_leftovers(&exe);
+
+        assert!(exe.exists());
+        assert!(!dir.join("花笺.exe.old").exists());
+        assert!(!dir.join("花笺.exe.new").exists());
+        assert!(
+            dir.join("其他.exe.old").exists(),
+            "unrelated files must be kept"
+        );
+        fs::remove_dir_all(&dir).expect("cleanup test dir");
     }
 }
