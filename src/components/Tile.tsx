@@ -127,7 +127,6 @@ export function Tile({
               <MarkdownPreview
                 content={content}
                 fontSize={fontSize}
-                renderHtml={false}
                 preserveLineBreaks={preserveLineBreaks}
                 imageBaseDir={imageBaseDir}
               />
