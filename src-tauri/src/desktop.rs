@@ -744,6 +744,8 @@ fn refresh_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn 
     let menu = build_tray_menu(app, config)?;
     tray.set_menu(Some(menu))?;
     tray.set_tooltip(Some(locales::TRAY_TOOLTIP))?;
+    // 隐藏模式下不显示托盘图标（图标对象仍保留，切回时直接恢复显示）
+    tray.set_visible(!config.hide_tray_icon)?;
     Ok(())
 }
 
@@ -1022,7 +1024,7 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         save_main_window_bounds(&webview);
     }
 
-    match main_window_close_action(app_is_exiting(window.app_handle()), close_to_tray_enabled()) {
+    match main_window_close_action(app_is_exiting(window.app_handle()), keep_running_on_close()) {
         MainWindowCloseAction::AllowClose => {}
         MainWindowCloseAction::HideToTray => {
             api.prevent_close();
@@ -1136,7 +1138,7 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
     let config = load_config()?;
     let menu = build_tray_menu(app.handle(), &config)?;
 
-    TrayIconBuilder::with_id(TRAY_ID)
+    let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(
             app.default_window_icon()
                 .expect("missing default window icon")
@@ -1163,6 +1165,9 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
             }
         })
         .build(app)?;
+    if config.hide_tray_icon {
+        tray.set_visible(false)?;
+    }
 
     Ok(())
 }
@@ -1187,10 +1192,7 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
             }
             let _ = app.emit("config-changed", &config);
         }
-        Some(TrayMenuAction::Quit) => {
-            mark_app_exiting(app);
-            app.exit(0);
-        }
+        Some(TrayMenuAction::Quit) => quit_app(app),
         None => {}
     }
 
@@ -1793,10 +1795,17 @@ fn load_config() -> Result<AppConfig, AppError> {
     default_store()?.load_config()
 }
 
-fn close_to_tray_enabled() -> bool {
+/// 关闭主窗口时是否只隐藏、保持进程常驻：开启“关闭到托盘”或“隐藏模式”均是
+fn keep_running_on_close() -> bool {
     load_config()
-        .map(|config| config.close_to_tray)
+        .map(|config| config.close_to_tray || config.hide_tray_icon)
         .unwrap_or(true)
+}
+
+/// 主动退出程序（隐藏模式下没有托盘菜单，由设置页的“退出程序”调用）
+pub fn quit_app(app: &AppHandle) {
+    mark_app_exiting(app);
+    app.exit(0);
 }
 
 fn notepad_always_on_top_enabled() -> bool {
@@ -2383,6 +2392,7 @@ mod tests {
             preserve_line_breaks: true,
             open_at_cursor: true,
             collapse_sidebar_on_startup: false,
+            hide_tray_icon: false,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: toggle_visibility_shortcut.into(),
@@ -2473,6 +2483,7 @@ mod tests {
             preserve_line_breaks: true,
             open_at_cursor: true,
             collapse_sidebar_on_startup: false,
+            hide_tray_icon: false,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
@@ -2518,6 +2529,7 @@ mod tests {
             preserve_line_breaks: true,
             open_at_cursor: true,
             collapse_sidebar_on_startup: false,
+            hide_tray_icon: false,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),

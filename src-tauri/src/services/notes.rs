@@ -93,6 +93,10 @@ pub struct AppConfig {
     pub open_at_cursor: bool,
     #[serde(default)]
     pub collapse_sidebar_on_startup: bool,
+    // 隐藏模式：不显示托盘图标，关闭主窗口只隐藏、进程常驻后台，
+    // 再次打开 md 文件时复用已加载的窗口，省去冷启动
+    #[serde(default)]
+    pub hide_tray_icon: bool,
     // Legacy fields — read from old config, never written back
     #[serde(default, skip_serializing)]
     pub notes_dir: Option<String>,
@@ -1150,6 +1154,7 @@ impl NoteStore {
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
             open_at_cursor: default_open_at_cursor(),
             collapse_sidebar_on_startup: false,
+            hide_tray_icon: false,
             notes_dir: None,
             last_known_base_dir: None,
         }
@@ -1873,6 +1878,7 @@ mod tests {
             last_known_base_dir: None,
             open_at_cursor: true,
             collapse_sidebar_on_startup: true,
+            hide_tray_icon: true,
         };
 
         store.save_config(saved.clone()).expect("save config");

@@ -403,6 +403,12 @@ fn take_startup_file() -> Option<String> {
     desktop::take_startup_file()
 }
 
+/// 退出整个程序（隐藏模式下没有托盘菜单可退出，供设置页调用）
+#[tauri::command]
+fn app_quit(app: AppHandle) {
+    desktop::quit_app(&app);
+}
+
 #[tauri::command]
 fn app_ready(app: AppHandle) -> Result<(), AppError> {
     if !std::env::args().any(|a| a == "--silent") {
@@ -545,7 +551,8 @@ pub fn run() {
             updater::commands::update_install_prepare_report,
             updater::commands::update_cancel,
             take_startup_file,
-            app_ready
+            app_ready,
+            app_quit
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
