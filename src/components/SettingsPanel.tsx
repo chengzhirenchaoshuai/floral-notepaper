@@ -5,6 +5,7 @@ import {
   checkGlobalShortcut,
   chooseBackgroundImage,
   loadSystemFonts,
+  quitApp,
 } from "../features/settings/api";
 import { UpdateSettingsSection } from "../features/update/UpdateSettingsSection";
 import type {
@@ -241,6 +242,37 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             checked={config.closeToTray}
             onChange={(checked) => setConfigValue("closeToTray", checked)}
           />
+          <ToggleRow
+            label={t("settings.hideTrayIcon", { defaultValue: "隐藏模式（不显示托盘图标）" })}
+            checked={config.hideTrayIcon}
+            onChange={(checked) => setConfigValue("hideTrayIcon", checked)}
+          />
+          {config.hideTrayIcon && (
+            <>
+              <p className="px-2.5 text-[10px] text-ink-ghost">
+                {t("settings.hideTrayIconHint", {
+                  defaultValue:
+                    "关闭窗口后程序在后台常驻，再打开 md 文件会更快；配合开机自启效果最好",
+                })}
+              </p>
+              <button
+                type="button"
+                onClick={() => void quitApp()}
+                className="w-full flex items-center justify-between min-h-11 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25 hover:bg-bamboo-mist/45 transition-colors cursor-pointer text-left"
+              >
+                <span className="min-w-0">
+                  <span className="block text-[12px] text-ink-soft">
+                    {t("settings.quitApp", { defaultValue: "退出程序" })}
+                  </span>
+                  <span className="block text-[10px] text-ink-ghost mt-0.5">
+                    {t("settings.quitAppHint", {
+                      defaultValue: "隐藏模式下没有托盘菜单，可在这里完全退出",
+                    })}
+                  </span>
+                </span>
+              </button>
+            </>
+          )}
           <ToggleRow
             label={t("settings.autostart", { defaultValue: "开机自启" })}
             checked={config.autostart}

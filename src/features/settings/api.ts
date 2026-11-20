@@ -16,6 +16,11 @@ export function saveConfig(config: AppConfig): Promise<AppConfig> {
   return invoke("config_save", { config });
 }
 
+/** 完全退出程序（隐藏模式下没有托盘菜单，从设置页退出） */
+export function quitApp(): Promise<void> {
+  return invoke("app_quit");
+}
+
 export function checkGlobalShortcut(shortcut: string): Promise<ShortcutCheckResult> {
   return invoke("global_shortcut_check", { shortcut });
 }

@@ -57,6 +57,7 @@ describe("settings api", () => {
       preserveLineBreaks: true,
       openAtCursor: true,
       collapseSidebarOnStartup: false,
+      hideTrayIcon: false,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -95,6 +96,7 @@ describe("settings api", () => {
       preserveLineBreaks: true,
       openAtCursor: true,
       collapseSidebarOnStartup: false,
+      hideTrayIcon: false,
     };
     mockedInvoke.mockResolvedValue(config);
 

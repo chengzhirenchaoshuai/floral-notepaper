@@ -224,6 +224,10 @@
     "closeTitle": "关闭设置",
     "closeToTray": "关闭到托盘",
     "collapseSidebarOnStartup": "启动时自动收起侧栏",
+    "hideTrayIcon": "隐藏模式（不显示托盘图标）",
+    "hideTrayIconHint": "关闭窗口后程序在后台常驻，再打开 md 文件会更快；配合开机自启效果最好",
+    "quitApp": "退出程序",
+    "quitAppHint": "隐藏模式下没有托盘菜单，可在这里完全退出",
     "defaultView": {
       "edit": "编辑",
       "label": "默认视图",

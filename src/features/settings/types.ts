@@ -40,6 +40,8 @@ export interface AppConfig {
   toggleVisibilityShortcut: string;
   openAtCursor: boolean;
   collapseSidebarOnStartup: boolean;
+  // 隐藏模式：不显示托盘图标，关闭主窗口后进程常驻后台
+  hideTrayIcon: boolean;
   backgroundImagePath?: string;
   backgroundFit?: BackgroundFit;
   backgroundDim?: number;
