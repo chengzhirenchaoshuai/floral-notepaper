@@ -237,11 +237,14 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
         </section>
 
         <section className="space-y-2">
-          <ToggleRow
-            label={t("settings.closeToTray", { defaultValue: "关闭到托盘" })}
-            checked={config.closeToTray}
-            onChange={(checked) => setConfigValue("closeToTray", checked)}
-          />
+          {/* 隐藏模式下关闭窗口总是常驻后台，“关闭到托盘”不起作用，直接不显示（原值保留） */}
+          {!config.hideTrayIcon && (
+            <ToggleRow
+              label={t("settings.closeToTray", { defaultValue: "关闭到托盘" })}
+              checked={config.closeToTray}
+              onChange={(checked) => setConfigValue("closeToTray", checked)}
+            />
+          )}
           <ToggleRow
             label={t("settings.hideTrayIcon", { defaultValue: "隐藏模式（不显示托盘图标）" })}
             checked={config.hideTrayIcon}
